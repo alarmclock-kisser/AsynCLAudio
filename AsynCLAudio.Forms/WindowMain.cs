@@ -1,5 +1,6 @@
 ﻿using AsynCLAudio.Core;
 using AsynCLAudio.OpenCl;
+using System.Runtime.CompilerServices;
 
 namespace AsynCLAudio.Forms
 {
@@ -29,9 +30,11 @@ namespace AsynCLAudio.Forms
 			this.SetupContextMenuForListBox();
 			this.RegisterNumericToSecondPow(this.numericUpDown_chunkSize);
 			this.listBox_tracks.SelectedIndexChanged += (sender, e) => this.UpdateInfoView();
+			this.listBox_log.DoubleClick += this.listBox_log_DoubleClick;
 			this.FillDevicesComboBox(2);
 			this.UpdateInfoView();
 		}
+
 
 		// ----- Methods ----- \\
 		protected override void Dispose(bool disposing = true)
@@ -56,6 +59,37 @@ namespace AsynCLAudio.Forms
 			base.Dispose(disposing);
 		}
 
+		public void Log(string message = "", string inner = "", bool messageBox = false)
+		{
+			string timeStamp = DateTime.Now.ToString("HH:mm:ss.fff");
+			string logMessage = $"[{timeStamp}]: {message}" + (string.IsNullOrEmpty(inner) ? "" : $" ({inner})");
+
+			Console.WriteLine(logMessage);
+			this.listBox_log.Items.Add(logMessage);
+
+			// Scroll to bottom
+			if (this.listBox_log.Items.Count > 0)
+			{
+				this.listBox_log.SelectedIndex = this.listBox_log.Items.Count - 1;
+				this.listBox_log.TopIndex = this.listBox_log.Items.Count - 1;
+			}
+
+			if (messageBox)
+			{
+				MessageBox.Show(message, $"Log [{timeStamp}]", MessageBoxButtons.OK, MessageBoxIcon.Information);
+			}
+		}
+
+		private void listBox_log_DoubleClick(Object? sender, EventArgs e)
+		{
+			// Copy selected log entry to clipboard
+			if (this.listBox_log.SelectedItem != null)
+			{
+				Clipboard.SetText(this.listBox_log.SelectedItem.ToString() ?? string.Empty);
+				MessageBox.Show(this.listBox_log.SelectedItem.ToString(), "Log copied to clipboard", MessageBoxButtons.OK, MessageBoxIcon.Information);
+			}
+		}
+
 		private void FillDevicesComboBox(int init = -1)
 		{
 			this.comboBox_devices.SelectedIndexChanged -= (sender, e) => this.openClService.Initialize(this.comboBox_devices.SelectedIndex);
@@ -68,6 +102,11 @@ namespace AsynCLAudio.Forms
 			if (init >= 0 && init < this.comboBox_devices.Items.Count)
 			{
 				this.comboBox_devices.SelectedIndex = init;
+
+				if (this.openClService.Index == init)
+				{
+					this.Log($"Initialized OpenCL on [{init}]", this.openClService.GetDeviceInfo() ?? "N/A");
+				}
 			}
 		}
 
@@ -206,15 +245,9 @@ namespace AsynCLAudio.Forms
 			}
 
 			// Dispose previous image
-			if (this.pictureBox_waveform.Image != null)
-			{
-				this.pictureBox_waveform.Image.Dispose();
-				this.pictureBox_waveform.Image = null;
-
-				GC.Collect();
-			}
 			this.pictureBox_waveform.Image = await this.SelectedTrack.GetWaveformImageSimpleAsync(null, this.pictureBox_waveform.Width, this.pictureBox_waveform.Height, (int) this.numericUpDown_samplesPerPixel.Value);
 			this.pictureBox_waveform.Invalidate();
+			GC.Collect();
 		}
 
 		private void RegisterNumericToSecondPow(NumericUpDown numeric)
@@ -324,11 +357,13 @@ namespace AsynCLAudio.Forms
 
 			if (ofd.ShowDialog() == DialogResult.OK)
 			{
+				this.Log("Started importing track(s)", string.Join(", ", ofd.FileNames));
+
 				foreach (string filePath in ofd.FileNames)
 				{
 					try
 					{
-						var audio = await this.audioCollection.ImportAsync(filePath);
+						var audio = await this.audioCollection.ImportAsync(filePath, true);
 					}
 					catch (Exception ex)
 					{
@@ -341,6 +376,8 @@ namespace AsynCLAudio.Forms
 
 				// Select last entry
 				this.listBox_tracks.SelectedIndex = this.listBox_tracks.Items.Count - 1;
+
+				this.Log("Successfully imported track(s)", ofd.FileNames.Length.ToString());
 			}
 		}
 
@@ -349,7 +386,7 @@ namespace AsynCLAudio.Forms
 			// Check if a track is selected
 			if (this.SelectedTrack == null)
 			{
-				MessageBox.Show("Please select a track to export.", "Export Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+				this.Log("Import error", "Please select a track first", true);
 				return;
 			}
 
@@ -365,19 +402,21 @@ namespace AsynCLAudio.Forms
 
 			if (sfd.ShowDialog() == DialogResult.OK)
 			{
+				this.Log("Started exporting track", sfd.FileName);
+
 				try
 				{
 					await this.SelectedTrack.Export(sfd.FileName);
-					MessageBox.Show($"Track exported successfully to {sfd.FileName}", "Export Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+					this.Log("Successfully exported track", sfd.FileName);
 				}
 				catch (Exception ex)
 				{
-					MessageBox.Show($"Error exporting track: {ex.Message}", "Export Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+					this.Log("Export error", ex.Message, true);
 				}
 			}
 		}
 
-		private async void button_playback_Click(object sender, EventArgs e)
+		private void button_playback_Click(object sender, EventArgs e)
 		{
 			// Check selected track
 			if (this.SelectedTrack == null)
@@ -393,14 +432,16 @@ namespace AsynCLAudio.Forms
 				this.SelectedTrack.Stop();
 				this.button_playback.Text = "▶";
 				this.playbackTimer.Elapsed -= (sender, e) => this.UpdateWaveform().Wait();
+				this.Log("Playback stopped ■", this.SelectedTrack.Name);
 			}
 			else
 			{
 				this.playbackTimer.Elapsed += (sender, e) => this.UpdateWaveform().GetAwaiter().GetResult();
 				this.playbackTimer.Start();
 				this.playbackCancellationToken = new();
-				await this.SelectedTrack.Play(this.playbackCancellationToken.Value, null, volume);
+				this.SelectedTrack.Play(this.playbackCancellationToken.Value, null, volume);
 				this.button_playback.Text = "■";
+				this.Log("Playback started ▶", this.SelectedTrack.Name);
 			}
 		}
 
@@ -434,28 +475,32 @@ namespace AsynCLAudio.Forms
 			// Check selected track
 			if (this.SelectedTrack == null)
 			{
-				MessageBox.Show("Please select a track to stretch.", "Stretch Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+				this.Log("Stretch error", "Please select a track to stretch", true);
 				return;
-			}
-
-			// Stop playback if running
-			if (this.SelectedTrack.Playing)
-			{
-				this.SelectedTrack.Stop();
-				this.playbackTimer.Stop();
-				this.button_playback.Text = "▶";
 			}
 
 			// Check selected kernel
 			string? kernelName = this.comboBox_stretchKernels.SelectedItem?.ToString();
 			if (string.IsNullOrEmpty(kernelName))
 			{
-				MessageBox.Show("Please select a stretching kernel.", "Stretch Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+				this.Log("Stretch error", "Please select a stretching kernel", true);
 				return;
 			}
 			string kernelVersion = kernelName.Substring(kernelName.Length - 2, 2);
 
 			var track = this.SelectedTrack;
+
+			// Get ctrl flag
+			bool ctrlPressed = (ModifierKeys & Keys.Control) == Keys.Control;
+
+			// Stop playback if running
+			if (track.Playing)
+			{
+				track.Stop();
+				this.playbackTimer.Stop();
+				this.button_playback.Text = "▶";
+				this.Log("Playback stopped ■", this.SelectedTrack.Name);
+			}
 
 			// Unselect track to prevent operations on it while processing + disable listbox
 			int selectedIndex = this.listBox_tracks.SelectedIndex;
@@ -482,6 +527,10 @@ namespace AsynCLAudio.Forms
 				}
 			});
 
+			await track.Normalize();
+
+			this.Log("Started stretching (" + kernelName + ")", (int)(max / 6) + " chunks, " + track.SizeInMb.ToString("F1") + " MB");
+
 			// Call time stretch
 			var result = await this.openClService.TimeStretch(track, kernelName, "", factor, chunkSize, overlap, progressHandler);
 
@@ -504,6 +553,11 @@ namespace AsynCLAudio.Forms
 			{
 				this.listBox_tracks.SelectedIndex = selectedIndex;
 			}
+
+			// Play windows complement sound
+			System.Media.SystemSounds.Asterisk.Play();
+
+			this.Log("Successfully stretched '" + track.Name + "'", track.ElapsedProcessingTime.ToString("F1") + " ms elapsed");
 		}
 
 		private async void button_reset_Click(object sender, EventArgs e)
@@ -520,8 +574,11 @@ namespace AsynCLAudio.Forms
 				this.SelectedTrack.Stop();
 				this.playbackTimer.Stop();
 				this.button_playback.Text = "▶";
+				this.Log("Playback stopped ■", this.SelectedTrack.Name);
 			}
 
+			this.Log("Started reloading", this.SelectedTrack.Name);
+			
 			await this.SelectedTrack.ReloadAsync();
 
 			// Update info
@@ -539,6 +596,8 @@ namespace AsynCLAudio.Forms
 
 			// Play windows complement sound
 			System.Media.SystemSounds.Asterisk.Play();
+
+			this.Log("Successfully reloaded", this.SelectedTrack.Name);
 		}
 	}
 }

@@ -61,7 +61,7 @@ namespace AsynCLAudio.Core
 		public System.Drawing.Size WaveformSize { get; set; } = new System.Drawing.Size(800, 200);
 		public SixLabors.ImageSharp.Image WaveformImage { get; private set; } = new Image<Rgba32>(800, 200);
 
-		private AudioObj(string filePath, int fps = 20)
+		public AudioObj(string filePath, bool linearLoad = false, int fps = 20)
 		{
 			this.Id = Guid.NewGuid();
 			this.FilePath = filePath;
@@ -69,6 +69,11 @@ namespace AsynCLAudio.Core
 
 			this.waveformUpdateTimer = this.SetupTimer(fps);
 			this.ReadBpmTag();
+
+			if (this.Data.LongLength <= 0 && linearLoad)
+			{
+				this.LoadAudioFile();
+			}
 		}
 
 		public void Dispose()
@@ -76,6 +81,39 @@ namespace AsynCLAudio.Core
 			this.Data = [];
 
 			GC.SuppressFinalize(this);
+		}
+
+		public void LoadAudioFile()
+		{
+			if (string.IsNullOrEmpty(this.FilePath))
+			{
+				throw new FileNotFoundException("File path is empty");
+			}
+
+			Stopwatch sw = Stopwatch.StartNew();
+
+			using AudioFileReader reader = new(this.FilePath);
+			this.SampleRate = reader.WaveFormat.SampleRate;
+			this.BitDepth = reader.WaveFormat.BitsPerSample;
+			this.Channels = reader.WaveFormat.Channels;
+
+			// Calculate number of samples
+			long numSamples = reader.Length / (reader.WaveFormat.BitsPerSample / 8);
+			this.Data = new float[numSamples];
+
+			int read = reader.Read(this.Data, 0, (int) numSamples);
+			if (read != numSamples)
+			{
+				float[] resizedData = new float[read];
+				Array.Copy(this.Data, resizedData, read);
+				this.Data = resizedData;
+			}
+
+			sw.Stop();
+			this.ElapsedLoadingTime = (float) sw.Elapsed.TotalMilliseconds;
+
+			// Read bpm metadata if available
+			this.ReadBpmTag();
 		}
 
 		public static async Task<AudioObj?> CreateAsync(string filePath, int refreshRateHz = 30)
@@ -86,7 +124,7 @@ namespace AsynCLAudio.Core
 				return null;
 			}
 
-			var obj = new AudioObj(filePath, refreshRateHz);
+			var obj = new AudioObj(filePath, false, refreshRateHz);
 
 			Stopwatch sw = Stopwatch.StartNew();
 
@@ -324,7 +362,7 @@ namespace AsynCLAudio.Core
 			return timer;
 		}
 
-		public async Task<IEnumerable<byte>> GetBytes(int maxWorkers = -2)
+		public async Task<byte[]> GetBytesAsync(int maxWorkers = 0)
 		{
 			if (this.Data == null || this.Data.Length == 0)
 			{
@@ -379,7 +417,36 @@ namespace AsynCLAudio.Core
 			return result;
 		}
 
-		public async Task<IEnumerable<float[]>> GetChunks(int size = 2048, float overlap = 0.5f, bool keepData = false, int maxWorkers = -2)
+		public byte[] GetBytes()
+		{
+			int bytesPerSample = this.BitDepth / 8;
+			byte[] bytes = new byte[this.Data.Length * bytesPerSample];
+
+			Parallel.For(0, this.Data.Length, i =>
+			{
+				switch (this.BitDepth)
+				{
+					case 8:
+						bytes[i] = (byte) (this.Data[i] * 127);
+						break;
+					case 16:
+						short sample16 = (short) (this.Data[i] * short.MaxValue);
+						Buffer.BlockCopy(BitConverter.GetBytes(sample16), 0, bytes, i * bytesPerSample, bytesPerSample);
+						break;
+					case 24:
+						int sample24 = (int) (this.Data[i] * 8388607);
+						Buffer.BlockCopy(BitConverter.GetBytes(sample24), 0, bytes, i * bytesPerSample, 3);
+						break;
+					case 32:
+						Buffer.BlockCopy(BitConverter.GetBytes(this.Data[i]), 0, bytes, i * bytesPerSample, bytesPerSample);
+						break;
+				}
+			});
+
+			return bytes;
+		}
+
+		public async Task<IEnumerable<float[]>> GetChunks(int size = 2048, float overlap = 0.5f, bool keepData = false, int maxWorkers = 0)
 		{
 			// Input Validation (sync part for fast fail)
 			if (this.Data == null || this.Data.Length == 0)
@@ -430,7 +497,7 @@ namespace AsynCLAudio.Core
 			return chunks;
 		}
 
-		public async Task AggregateStretchedChunks(IEnumerable<float[]> chunks, bool keepPointer = false, int maxWorkers = -2)
+		public async Task AggregateStretchedChunks(IEnumerable<float[]> chunks, bool keepPointer = false, int maxWorkers = 0)
 		{
 			if (chunks == null || chunks.LongCount() <= 0)
 			{
@@ -525,8 +592,7 @@ namespace AsynCLAudio.Core
 				};
 
 				// Async audio data preparation with cancellation
-				byte[] bytes = (await Task.Run(() => this.GetBytes(), cancellationToken)
-									   .ConfigureAwait(false)).AsParallel().ToArray();
+				byte[] bytes = await this.GetBytesAsync();
 
 				var waveFormat = WaveFormat.CreateIeeeFloatWaveFormat(this.SampleRate, this.Channels);
 				var memoryStream = new MemoryStream(bytes);
@@ -908,8 +974,7 @@ namespace AsynCLAudio.Core
 			try
 			{
 				// Process audio data in parallel
-				byte[] bytes = (await Task.Run(() => this.GetBytes())
-									  .ConfigureAwait(false)).AsParallel().ToArray();
+				byte[] bytes = await this.GetBytesAsync();
 
 				var waveFormat = WaveFormat.CreateIeeeFloatWaveFormat(
 					this.SampleRate,

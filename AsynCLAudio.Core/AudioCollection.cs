@@ -38,9 +38,17 @@ namespace AsynCLAudio.Core
 
 		}
 
-		public async Task<AudioObj?> ImportAsync(string filePath)
+		public async Task<AudioObj?> ImportAsync(string filePath, bool linearLoad = false)
 		{
-			var obj = await AudioObj.CreateAsync(filePath);
+			AudioObj? obj = null;
+			if (linearLoad)
+			{
+				obj = new AudioObj(filePath, true);
+			}
+			else
+			{
+				obj = await AudioObj.CreateAsync(filePath);
+			}
 			if (obj == null)
 			{
 				return null;

@@ -7,10 +7,10 @@
         /// </summary>
         private System.ComponentModel.IContainer components = null;
 
-        /// <summary>
-        ///  Clean up any resources being used.
-        /// </summary>
-        /// <param name="disposing">true if managed resources should be disposed; otherwise, false.</param>
+		/// <summary>
+		///  Clean up any resources being used.
+		/// </summary>
+		/// <param name="disposing">true if managed resources should be disposed; otherwise, false.</param>
 
 		#region Windows Form Designer generated code
 
@@ -40,6 +40,7 @@
 			this.comboBox_stretchKernels = new ComboBox();
 			this.button_reset = new Button();
 			this.progressBar_processing = new ProgressBar();
+			this.listBox_log = new ListBox();
 			((System.ComponentModel.ISupportInitialize) this.pictureBox_waveform).BeginInit();
 			((System.ComponentModel.ISupportInitialize) this.numericUpDown_chunkSize).BeginInit();
 			((System.ComponentModel.ISupportInitialize) this.numericUpDown_overlap).BeginInit();
@@ -246,11 +247,22 @@
 			this.progressBar_processing.Size = new Size(414, 23);
 			this.progressBar_processing.TabIndex = 20;
 			// 
+			// listBox_log
+			// 
+			this.listBox_log.Font = new Font("Segoe UI", 8.25F, FontStyle.Regular, GraphicsUnit.Point,  0);
+			this.listBox_log.FormattingEnabled = true;
+			this.listBox_log.ItemHeight = 13;
+			this.listBox_log.Location = new Point(12, 154);
+			this.listBox_log.Name = "listBox_log";
+			this.listBox_log.Size = new Size(414, 199);
+			this.listBox_log.TabIndex = 21;
+			// 
 			// WindowMain
 			// 
 			this.AutoScaleDimensions = new SizeF(7F, 15F);
 			this.AutoScaleMode = AutoScaleMode.Font;
 			this.ClientSize = new Size(704, 681);
+			this.Controls.Add(this.listBox_log);
 			this.Controls.Add(this.progressBar_processing);
 			this.Controls.Add(this.button_reset);
 			this.Controls.Add(this.comboBox_stretchKernels);
@@ -308,5 +320,6 @@
 		private ComboBox comboBox_stretchKernels;
 		private Button button_reset;
 		private ProgressBar progressBar_processing;
+		private ListBox listBox_log;
 	}
 }
