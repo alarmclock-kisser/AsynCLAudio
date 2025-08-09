@@ -113,6 +113,7 @@ namespace AsynCLAudio.Forms
 		private void FillTracksListBox(bool keepSelection = true)
 		{
 			int selectedIndex = this.listBox_tracks.SelectedIndex;
+			this.listBox_tracks.SelectedValueChanged -= (sender, e) => this.UpdateInfoView();
 			this.listBox_tracks.Items.Clear();
 
 			foreach (var audio in this.audioCollection.Tracks)
@@ -129,6 +130,8 @@ namespace AsynCLAudio.Forms
 			{
 				this.listBox_tracks.SelectedIndex = -1;
 			}
+
+			this.listBox_tracks.SelectedIndexChanged += (sender, e) => this.UpdateInfoView();
 		}
 
 		private void FillStretchKernelsComboBox(string searchKey = "timestretch")
@@ -152,6 +155,7 @@ namespace AsynCLAudio.Forms
 		private void UpdateInfoView()
 		{
 			this.audioCollection.StopAll();
+			this.button_playback.Text = "▶";
 			this.numericUpDown_chunkSize.Enabled = true;
 			this.numericUpDown_overlap.Enabled = true;
 			this.button_stretch.Enabled = true;
@@ -374,9 +378,6 @@ namespace AsynCLAudio.Forms
 				// Fill tracks
 				this.FillTracksListBox();
 
-				// Select last entry
-				this.listBox_tracks.SelectedIndex = this.listBox_tracks.Items.Count - 1;
-
 				this.Log("Successfully imported track(s)", ofd.FileNames.Length.ToString());
 			}
 		}
@@ -416,7 +417,7 @@ namespace AsynCLAudio.Forms
 			}
 		}
 
-		private void button_playback_Click(object sender, EventArgs e)
+		private async void button_playback_Click(object sender, EventArgs e)
 		{
 			// Check selected track
 			if (this.SelectedTrack == null)
@@ -439,7 +440,7 @@ namespace AsynCLAudio.Forms
 				this.playbackTimer.Elapsed += (sender, e) => this.UpdateWaveform().GetAwaiter().GetResult();
 				this.playbackTimer.Start();
 				this.playbackCancellationToken = new();
-				this.SelectedTrack.Play(this.playbackCancellationToken.Value, null, volume);
+				await this.SelectedTrack.Play(this.playbackCancellationToken.Value, null, volume);
 				this.button_playback.Text = "■";
 				this.Log("Playback started ▶", this.SelectedTrack.Name);
 			}
