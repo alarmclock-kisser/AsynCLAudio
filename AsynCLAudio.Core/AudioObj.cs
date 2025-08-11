@@ -124,7 +124,7 @@ namespace AsynCLAudio.Core
 			this.ReadBpmTag();
 		}
 
-		public static async Task<AudioObj?> CreateAsync(string filePath, int refreshRateHz = 30)
+		public static async Task<AudioObj?> CreateAsync(string filePath, int refreshRateHz = 30, int maxWorkers = -2)
 		{
 			// Check file
 			if (string.IsNullOrEmpty(filePath) || !File.Exists(filePath))
@@ -149,7 +149,7 @@ namespace AsynCLAudio.Core
 			obj.Data = new float[dataLengthInFloats];
 
 			// Worker count
-			int workerCount = Math.Min(Environment.ProcessorCount, 16);
+			int workerCount = CommonStatics.AdjustWorkersCount(maxWorkers);
 			int floatsPerWorker = dataLengthInFloats / workerCount;
 			var tasks = new List<Task>();
 
@@ -186,7 +186,7 @@ namespace AsynCLAudio.Core
 			return obj;
 		}
 
-		public async Task ReloadAsync()
+		public async Task ReloadAsync(int maxWorkers = -2)
 		{
 			Stopwatch sw = Stopwatch.StartNew();
 
@@ -203,7 +203,7 @@ namespace AsynCLAudio.Core
 			this.Data = new float[dataLengthInFloats];
 
 			// Worker count
-			int workerCount = Math.Min(Environment.ProcessorCount, 16);
+			int workerCount = CommonStatics.AdjustWorkersCount(maxWorkers);
 			int floatsPerWorker = dataLengthInFloats / workerCount;
 			var tasks = new List<Task>();
 
@@ -370,7 +370,7 @@ namespace AsynCLAudio.Core
 			return timer;
 		}
 
-		public async Task<byte[]> GetBytesAsync(int maxWorkers = 0)
+		public async Task<byte[]> GetBytesAsync(int maxWorkers = -2)
 		{
 			if (this.Data == null || this.Data.Length == 0)
 			{

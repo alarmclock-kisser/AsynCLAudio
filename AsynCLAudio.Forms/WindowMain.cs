@@ -760,6 +760,22 @@ namespace AsynCLAudio.Forms
 				this.progressBar_processing.Value = 0;
 			}
 
+			// Optionally: Export track
+			if (this.checkBox_autoExport.Checked)
+			{
+				// Create output directory if not exists
+				string outputDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyMusic), "AsynCLAudio", "Output");
+				if (!Directory.Exists(outputDir))
+				{
+					Directory.CreateDirectory(outputDir);
+					this.Log("Created output directory", outputDir);
+				}
+
+				await track.Export(outputDir);
+
+				this.Log($"Exported '{track.Name}' to {outputDir}");
+			}
+
 			// Re-enable listbox + select previous track
 			this.listBox_tracks.Enabled = true;
 			if (selectedIndex >= 0 && selectedIndex < this.listBox_tracks.Items.Count)
@@ -792,7 +808,11 @@ namespace AsynCLAudio.Forms
 
 			this.Log("Started reloading", this.SelectedTrack.Name);
 
-			await this.SelectedTrack.ReloadAsync();
+			await Task.Run(() =>
+			{
+				// Reset track
+				this.SelectedTrack.LoadAudioFile();
+			});
 
 			// Update info
 			this.UpdateInfoView();
