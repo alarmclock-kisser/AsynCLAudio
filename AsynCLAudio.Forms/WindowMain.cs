@@ -548,9 +548,9 @@ namespace AsynCLAudio.Forms
 			OpenFileDialog ofd = new()
 			{
 				Title = "Import Audio File(s)",
-				InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.MyMusic) + "\\AsynCLAudio\\Input",
+				InitialDirectory = (this.audioCollection.Count > 0 ? Environment.GetFolderPath(Environment.SpecialFolder.MyMusic) : Environment.GetFolderPath(Environment.SpecialFolder.MyMusic) + "\\AsynCLAudio\\Input"),
 				Multiselect = true,
-				Filter = "Audio Files|*.mp3;*.wav;*.flac;"
+				Filter = "Audio Files|*.mp3;*.wav;*.flac;",
 			};
 
 			if (ofd.ShowDialog() == DialogResult.OK)
