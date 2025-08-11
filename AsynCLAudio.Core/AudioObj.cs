@@ -24,7 +24,15 @@ namespace AsynCLAudio.Core
 		public string Name => Path.GetFileNameWithoutExtension(this.FilePath);
 
 		public float[] Data { get; private set; } = [];
-		public int SampleRate { get; private set; } = 0;
+		private int originalSampleRate = 0;
+		public int SampleRate
+		{ 
+			get => this.originalSampleRate > 0 ? this.originalSampleRate : 44100;
+			set
+			{
+				this.originalSampleRate = value > 0 ? value : 44100;
+			}
+		}
 		public int Channels { get; private set; } = 0;
 		public int BitDepth { get; private set; } = 0;
 		public long Length => this.Data.LongLength;
@@ -93,7 +101,7 @@ namespace AsynCLAudio.Core
 			Stopwatch sw = Stopwatch.StartNew();
 
 			using AudioFileReader reader = new(this.FilePath);
-			this.SampleRate = reader.WaveFormat.SampleRate;
+			this.originalSampleRate = reader.WaveFormat.SampleRate;
 			this.BitDepth = reader.WaveFormat.BitsPerSample;
 			this.Channels = reader.WaveFormat.Channels;
 
@@ -130,7 +138,7 @@ namespace AsynCLAudio.Core
 
 			using var mainReader = new AudioFileReader(filePath);
 
-			obj.SampleRate = mainReader.WaveFormat.SampleRate;
+			obj.originalSampleRate = mainReader.WaveFormat.SampleRate;
 			obj.Channels = mainReader.WaveFormat.Channels;
 			obj.BitDepth = mainReader.WaveFormat.BitsPerSample;
 
@@ -184,7 +192,7 @@ namespace AsynCLAudio.Core
 
 			using var mainReader = new AudioFileReader(this.FilePath);
 
-			this.SampleRate = mainReader.WaveFormat.SampleRate;
+			this.originalSampleRate = mainReader.WaveFormat.SampleRate;
 			this.Channels = mainReader.WaveFormat.Channels;
 			this.BitDepth = mainReader.WaveFormat.BitsPerSample;
 
@@ -417,12 +425,20 @@ namespace AsynCLAudio.Core
 			return result;
 		}
 
-		public byte[] GetBytes()
+		public byte[] GetBytes(int maxWorkers = -2)
 		{
 			int bytesPerSample = this.BitDepth / 8;
 			byte[] bytes = new byte[this.Data.Length * bytesPerSample];
 
-			Parallel.For(0, this.Data.Length, i =>
+			maxWorkers = CommonStatics.AdjustWorkersCount(maxWorkers);
+
+			// Parallel options
+			var parallelOptions = new ParallelOptions
+			{
+				MaxDegreeOfParallelism = maxWorkers
+			};
+
+			Parallel.For(0, this.Data.Length, parallelOptions, i =>
 			{
 				switch (this.BitDepth)
 				{
@@ -446,7 +462,7 @@ namespace AsynCLAudio.Core
 			return bytes;
 		}
 
-		public async Task<IEnumerable<float[]>> GetChunks(int size = 2048, float overlap = 0.5f, bool keepData = false, int maxWorkers = 0)
+		public async Task<IEnumerable<float[]>> GetChunks(int size = 2048, float overlap = 0.5f, bool keepData = false, int maxWorkers = -2)
 		{
 			// Input Validation (sync part for fast fail)
 			if (this.Data == null || this.Data.Length == 0)
@@ -497,7 +513,7 @@ namespace AsynCLAudio.Core
 			return chunks;
 		}
 
-		public async Task AggregateStretchedChunks(IEnumerable<float[]> chunks, bool keepPointer = false, int maxWorkers = 0)
+		public async Task AggregateStretchedChunks(IEnumerable<float[]> chunks, bool keepPointer = false, int maxWorkers = 2)
 		{
 			if (chunks == null || chunks.LongCount() <= 0)
 			{
@@ -542,7 +558,10 @@ namespace AsynCLAudio.Core
 					for (int j = 0; j < Math.Min(chunkSize, chunk.Length); j++)
 					{
 						int idx = offset + j;
-						if (idx >= outputLength) break;
+						if (idx >= outputLength)
+						{
+							break;
+						}
 
 						double windowedSample = chunk[j] * window[j];
 
@@ -566,8 +585,23 @@ namespace AsynCLAudio.Core
 			}).ConfigureAwait(true);
 		}
 
-
 		// Playback
+		public async Task SetVolume(float volume)
+		{
+			// Invoke async
+			await Task.Run(() =>
+			{
+				if (this.player != null && this.player.PlaybackState == PlaybackState.Playing)
+				{
+					this.player.Volume = Math.Clamp(volume, 0f, 1f);
+				}
+				else
+				{
+					this.Volume = (int) (Math.Clamp(volume, 0f, 1f) * 100);
+				}
+			});
+		}
+
 		public async Task Play(CancellationToken cancellationToken, Action? onPlaybackStopped = null, float? initialVolume = null)
 		{
 			initialVolume ??= this.Volume / 100f;
@@ -658,6 +692,14 @@ namespace AsynCLAudio.Core
 				Debug.WriteLine($"Playback initialization failed: {ex.Message}");
 				this.player?.Dispose();
 				throw;
+			}
+		}
+
+		public async Task Pause()
+		{ 			
+			if (this.player != null && this.player.PlaybackState == PlaybackState.Playing)
+			{
+				await Task.Run(() => this.player.Pause());
 			}
 		}
 
@@ -919,8 +961,15 @@ namespace AsynCLAudio.Core
 
 							for (int s = startSample; s < endSample; s++)
 							{
-								if (samples[s] > maxPeak) maxPeak = samples[s];
-								if (samples[s] < minPeak) minPeak = samples[s];
+								if (samples[s] > maxPeak)
+								{
+									maxPeak = samples[s];
+								}
+
+								if (samples[s] < minPeak)
+								{
+									minPeak = samples[s];
+								}
 							}
 
 							// Skaliere die Peak-Werte auf die Bildhöhe

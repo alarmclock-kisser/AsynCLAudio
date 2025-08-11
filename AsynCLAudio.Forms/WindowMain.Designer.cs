@@ -1,4 +1,5 @@
-﻿namespace AsynCLAudio.Forms
+﻿
+namespace AsynCLAudio.Forms
 {
     partial class WindowMain
     {
@@ -41,6 +42,13 @@
 			this.button_reset = new Button();
 			this.progressBar_processing = new ProgressBar();
 			this.listBox_log = new ListBox();
+			this.vScrollBar_volume = new VScrollBar();
+			this.button_normalize = new Button();
+			this.button_record = new Button();
+			this.textBox_recordingTime = new TextBox();
+			this.checkBox_autoExport = new CheckBox();
+			this.button_pause = new Button();
+			this.vScrollBar_sampleRate = new VScrollBar();
 			((System.ComponentModel.ISupportInitialize) this.pictureBox_waveform).BeginInit();
 			((System.ComponentModel.ISupportInitialize) this.numericUpDown_chunkSize).BeginInit();
 			((System.ComponentModel.ISupportInitialize) this.numericUpDown_overlap).BeginInit();
@@ -189,7 +197,7 @@
 			this.numericUpDown_stretchFactor.Maximum = new decimal(new int[] { 10, 0, 0, 0 });
 			this.numericUpDown_stretchFactor.Minimum = new decimal(new int[] { 5, 0, 0, 131072 });
 			this.numericUpDown_stretchFactor.Name = "numericUpDown_stretchFactor";
-			this.numericUpDown_stretchFactor.Size = new Size(171, 23);
+			this.numericUpDown_stretchFactor.Size = new Size(128, 23);
 			this.numericUpDown_stretchFactor.TabIndex = 14;
 			this.numericUpDown_stretchFactor.Value = new decimal(new int[] { 1, 0, 0, 0 });
 			this.numericUpDown_stretchFactor.ValueChanged += this.numericUpDown_stretchFactor_ValueChanged;
@@ -226,7 +234,7 @@
 			this.comboBox_stretchKernels.FormattingEnabled = true;
 			this.comboBox_stretchKernels.Location = new Point(12, 359);
 			this.comboBox_stretchKernels.Name = "comboBox_stretchKernels";
-			this.comboBox_stretchKernels.Size = new Size(414, 23);
+			this.comboBox_stretchKernels.Size = new Size(371, 23);
 			this.comboBox_stretchKernels.TabIndex = 18;
 			this.comboBox_stretchKernels.Text = "Select OpenCL-Kernel for time stretching ...";
 			// 
@@ -257,11 +265,88 @@
 			this.listBox_log.Size = new Size(414, 199);
 			this.listBox_log.TabIndex = 21;
 			// 
+			// vScrollBar_volume
+			// 
+			this.vScrollBar_volume.Location = new Point(406, 359);
+			this.vScrollBar_volume.Name = "vScrollBar_volume";
+			this.vScrollBar_volume.Size = new Size(20, 158);
+			this.vScrollBar_volume.TabIndex = 22;
+			this.vScrollBar_volume.Scroll += this.vScrollBar_volume_Scroll;
+			// 
+			// button_normalize
+			// 
+			this.button_normalize.Location = new Point(12, 422);
+			this.button_normalize.Name = "button_normalize";
+			this.button_normalize.Size = new Size(75, 23);
+			this.button_normalize.TabIndex = 23;
+			this.button_normalize.Text = "Normalize";
+			this.button_normalize.UseVisualStyleBackColor = true;
+			this.button_normalize.Click += this.button_normalize_Click;
+			// 
+			// button_record
+			// 
+			this.button_record.ForeColor = Color.Red;
+			this.button_record.Location = new Point(588, 272);
+			this.button_record.Name = "button_record";
+			this.button_record.Size = new Size(23, 23);
+			this.button_record.TabIndex = 24;
+			this.button_record.Text = "●";
+			this.button_record.UseVisualStyleBackColor = true;
+			this.button_record.Click += this.button_record_Click;
+			// 
+			// textBox_recordingTime
+			// 
+			this.textBox_recordingTime.Location = new Point(513, 301);
+			this.textBox_recordingTime.Name = "textBox_recordingTime";
+			this.textBox_recordingTime.PlaceholderText = "00:00.000";
+			this.textBox_recordingTime.ReadOnly = true;
+			this.textBox_recordingTime.Size = new Size(69, 23);
+			this.textBox_recordingTime.TabIndex = 25;
+			// 
+			// checkBox_autoExport
+			// 
+			this.checkBox_autoExport.AutoSize = true;
+			this.checkBox_autoExport.Checked = true;
+			this.checkBox_autoExport.CheckState = CheckState.Checked;
+			this.checkBox_autoExport.Location = new Point(12, 451);
+			this.checkBox_autoExport.Name = "checkBox_autoExport";
+			this.checkBox_autoExport.Size = new Size(59, 34);
+			this.checkBox_autoExport.TabIndex = 26;
+			this.checkBox_autoExport.Text = "Auto\r\nExport";
+			this.checkBox_autoExport.UseVisualStyleBackColor = true;
+			// 
+			// button_pause
+			// 
+			this.button_pause.Location = new Point(588, 301);
+			this.button_pause.Name = "button_pause";
+			this.button_pause.Size = new Size(23, 23);
+			this.button_pause.TabIndex = 27;
+			this.button_pause.Text = "||";
+			this.button_pause.UseVisualStyleBackColor = true;
+			this.button_pause.Click += this.button_pause_Click;
+			// 
+			// vScrollBar_sampleRate
+			// 
+			this.vScrollBar_sampleRate.Location = new Point(386, 359);
+			this.vScrollBar_sampleRate.Maximum = 65536;
+			this.vScrollBar_sampleRate.Name = "vScrollBar_sampleRate";
+			this.vScrollBar_sampleRate.Size = new Size(20, 158);
+			this.vScrollBar_sampleRate.TabIndex = 28;
+			this.vScrollBar_sampleRate.Value = 32768;
+			this.vScrollBar_sampleRate.Scroll += this.vScrollBar_sampleRate_Scroll;
+			// 
 			// WindowMain
 			// 
 			this.AutoScaleDimensions = new SizeF(7F, 15F);
 			this.AutoScaleMode = AutoScaleMode.Font;
 			this.ClientSize = new Size(704, 681);
+			this.Controls.Add(this.vScrollBar_sampleRate);
+			this.Controls.Add(this.button_pause);
+			this.Controls.Add(this.checkBox_autoExport);
+			this.Controls.Add(this.textBox_recordingTime);
+			this.Controls.Add(this.button_record);
+			this.Controls.Add(this.button_normalize);
+			this.Controls.Add(this.vScrollBar_volume);
 			this.Controls.Add(this.listBox_log);
 			this.Controls.Add(this.progressBar_processing);
 			this.Controls.Add(this.button_reset);
@@ -298,6 +383,8 @@
 			this.PerformLayout();
 		}
 
+		private void vScrollBar_sampleRate_Scroll(Object sender, ScrollEventArgs e) => throw new NotImplementedException();
+
 		#endregion
 
 		private PictureBox pictureBox_waveform;
@@ -321,5 +408,12 @@
 		private Button button_reset;
 		private ProgressBar progressBar_processing;
 		private ListBox listBox_log;
+		private VScrollBar vScrollBar_volume;
+		private Button button_normalize;
+		private Button button_record;
+		private TextBox textBox_recordingTime;
+		private CheckBox checkBox_autoExport;
+		private Button button_pause;
+		private VScrollBar vScrollBar_sampleRate;
 	}
 }

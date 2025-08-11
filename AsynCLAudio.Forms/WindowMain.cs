@@ -1,6 +1,8 @@
 ﻿using AsynCLAudio.Core;
 using AsynCLAudio.OpenCl;
+using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
+using Timer = System.Threading.Timer;
 
 namespace AsynCLAudio.Forms
 {
@@ -8,6 +10,9 @@ namespace AsynCLAudio.Forms
 	{
 		private readonly AudioCollection audioCollection;
 		private readonly OpenClService openClService;
+
+		private readonly AudioRecorder audioRecorder;
+		private Timer? recordingTimer = null;
 
 		private bool disposing = false;
 
@@ -25,6 +30,8 @@ namespace AsynCLAudio.Forms
 			this.openClService = openClService;
 
 			this.InitializeComponent();
+
+			this.audioRecorder = new AudioRecorder();
 
 			// Event for right-click on entry -> remove context menu (selected track)
 			this.SetupContextMenuForListBox();
@@ -169,9 +176,9 @@ namespace AsynCLAudio.Forms
 				this.textBox_trackInfo.Text = "No track selected.";
 				this.button_export.Enabled = false;
 				this.button_playback.Enabled = false;
-				this.button_stretch.Enabled = false;
 				this.pictureBox_waveform.Image = null;
 				this.button_reset.Enabled = false;
+				this.button_stretch.Enabled = false;
 				this.comboBox_stretchKernels.Enabled = false;
 				this.numericUpDown_samplesPerPixel.Enabled = false;
 				return;
@@ -331,7 +338,7 @@ namespace AsynCLAudio.Forms
 
 					// Optional: UI-Update, z.B. die ListBox aktualisieren
 					this.FillTracksListBox();
-					this.UpdateInfoView() ;
+					this.UpdateInfoView();
 					GC.Collect();
 				}
 			};
@@ -343,7 +350,194 @@ namespace AsynCLAudio.Forms
 			this.listBox_tracks.ContextMenuStrip = contextMenu;
 		}
 
+		private async Task StretchAllParallel()
+		{
+			float target = (float) this.numericUpDown_targetBpm.Value;
+			int chunkSize = (int) this.numericUpDown_chunkSize.Value;
+			float overlap = (float) this.numericUpDown_overlap.Value;
+			string kernel = this.comboBox_stretchKernels.SelectedItem?.ToString() ?? string.Empty;
 
+			var lastUpdate = DateTime.MinValue;
+			var progressHandler = new Progress<int>(value =>
+			{
+				if (DateTime.Now - lastUpdate < TimeSpan.FromMilliseconds(100))
+				{
+					return;
+				}
+
+				lastUpdate = DateTime.Now;
+				if (this.progressBar_processing.InvokeRequired)
+				{
+					this.progressBar_processing.Invoke(new Action(() => this.progressBar_processing.Increment(value)));
+				}
+				else
+				{
+					this.progressBar_processing.Increment(value);
+				}
+			});
+
+			// Create task for each track
+			List<Task> stretchTasks = [];
+			int chunkCount = 0;
+			foreach (var track in this.audioCollection.Tracks)
+			{
+				if (track.Bpm < 60)
+				{
+					this.Log("Stretch error", $"Track '{track.Name}' has a BPM below 60, skipping", true);
+					continue;
+				}
+
+				chunkCount += (int) Math.Ceiling((double) track.Length / chunkSize);
+
+				double factor = (double) (track.Bpm / target);
+
+				stretchTasks.Add(Task.Run(() => this.openClService.TimeStretch(track, kernel, "", factor, chunkSize, overlap, progressHandler)));
+			}
+
+			// Set progress bar (max = chunkCount * 6, value = 0)
+			this.progressBar_processing.Maximum = chunkCount * 6;
+			this.progressBar_processing.Value = 0;
+			this.Log($"Proposed chunk count to process: " + chunkCount, $"{stretchTasks.Count} tracks");
+
+			// Wait for all tasks to complete (iterate through each track!)
+			foreach (var task in stretchTasks)
+			{
+				try
+				{
+					await task;
+				}
+				catch (Exception ex)
+				{
+					this.Log("Stretch error", ex.Message, true);
+				}
+			}
+
+			// Reset progress bar
+			if (this.progressBar_processing.InvokeRequired)
+			{
+				this.progressBar_processing.Invoke(new Action(() => this.progressBar_processing.Value = 0));
+			}
+			else
+			{
+				this.progressBar_processing.Value = 0;
+			}
+
+			// Update view
+			this.FillTracksListBox();
+		}
+
+		private async Task StretchAll()
+		{
+			string kernelName = this.comboBox_stretchKernels.SelectedItem?.ToString() ?? string.Empty;
+
+			// Unselect track to prevent operations on it while processing + disable listbox
+			int selectedIndex = this.listBox_tracks.SelectedIndex;
+			this.listBox_tracks.SelectedIndex = -1;
+			this.listBox_tracks.Enabled = false;
+
+			ConcurrentBag<AudioObj> selectedTracks = [];
+
+			foreach (var track in this.audioCollection.Tracks)
+			{
+				if (track.Bpm < 60)
+				{
+					this.Log("Stretch error", $"Track '{track.Name}' has a BPM below 60, skipping", true);
+					continue;
+				}
+
+				// Add track to bag
+				selectedTracks.Add(track);
+
+				double factor = (double) (track.Bpm / (double) this.numericUpDown_targetBpm.Value);
+				int chunkSize = (int) this.numericUpDown_chunkSize.Value;
+				float overlap = (float) this.numericUpDown_overlap.Value;
+
+				int max = (int) (track.Length / chunkSize) * 6;
+				this.progressBar_processing.Maximum = max;
+				this.progressBar_processing.Value = 0;
+				var progressHandler = new Progress<int>(value =>
+				{
+					if (this.progressBar_processing.InvokeRequired)
+					{
+						this.progressBar_processing.Invoke(new Action(() => this.progressBar_processing.Increment(value)));
+					}
+					else
+					{
+						this.progressBar_processing.Increment(value);
+					}
+				});
+
+				// Stop playback if running
+				if (track.Playing)
+				{
+					track.Stop();
+					this.playbackTimer.Stop();
+					this.button_playback.Text = "▶";
+					this.Log("Playback stopped ■", track.Name);
+				}
+
+				this.Log($"Started stretching '{track.Name}' ({track.Bpm} BPM) to {this.numericUpDown_targetBpm.Value} BPM with factor {factor:F2}", $"{chunkSize} samples, {overlap:F2} overlap");
+
+				// Call time stretch
+				var result = await this.openClService.TimeStretch(track, kernelName, "", factor, chunkSize, overlap, progressHandler);
+
+				// Update info
+				this.UpdateInfoView();
+				this.Log($"Successfully stretched '{track.Name}'", $"{track.ElapsedProcessingTime:F1} ms elapsed");
+
+				// Reset progress bar
+				if (this.progressBar_processing.InvokeRequired)
+				{
+					this.progressBar_processing.Invoke(new Action(() => this.progressBar_processing.Value = 0));
+				}
+				else
+				{
+					this.progressBar_processing.Value = 0;
+				}
+			}
+
+			// Re-enable listbox + select previous track
+			this.listBox_tracks.Enabled = true;
+			if (selectedIndex >= 0 && selectedIndex < this.listBox_tracks.Items.Count)
+			{
+				this.listBox_tracks.SelectedIndex = selectedIndex;
+			}
+
+			// Log total processed tracks + time
+			int count = selectedTracks.Count;
+			long totalTime = (long) selectedTracks.Sum(t => t.ElapsedProcessingTime);
+			double totalSeconds = totalTime / 1000.0;
+			this.Log($"Total processed tracks: {count}, Total processing time: {totalSeconds:F1} seconds");
+
+			// Optionally: Export all processed tracks
+			if (this.checkBox_autoExport.Checked)
+			{
+				// Create output directory if not exists
+				string outputDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyMusic), "AsynCLAudio", "Output");
+				if (!Directory.Exists(outputDir))
+				{
+					Directory.CreateDirectory(outputDir);
+					this.Log("Created output directory", outputDir);
+				}
+
+				foreach (var track in selectedTracks)
+				{
+					try
+					{
+						string exportPath = Path.Combine(outputDir, $"{track.Name} [{track.Bpm:F2} BPM].wav");
+						await track.Export(exportPath);
+						this.Log($"Exported '{track.Name}' to {exportPath}");
+					}
+					catch (Exception ex)
+					{
+						this.Log("Export error", $"Failed to export '{track.Name}': {ex.Message}", true);
+					}
+				}
+			}
+
+			// Play windows complement sound
+			System.Media.SystemSounds.Asterisk.Play();
+		}
 
 
 
@@ -354,7 +548,7 @@ namespace AsynCLAudio.Forms
 			OpenFileDialog ofd = new()
 			{
 				Title = "Import Audio File(s)",
-				InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.MyMusic),
+				InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.MyMusic) + "\\AsynCLAudio\\Input",
 				Multiselect = true,
 				Filter = "Audio Files|*.mp3;*.wav;*.flac;"
 			};
@@ -362,12 +556,16 @@ namespace AsynCLAudio.Forms
 			if (ofd.ShowDialog() == DialogResult.OK)
 			{
 				this.Log("Started importing track(s)", string.Join(", ", ofd.FileNames));
-
+				List<AudioObj> importedTracks = [];
 				foreach (string filePath in ofd.FileNames)
 				{
 					try
 					{
 						var audio = await this.audioCollection.ImportAsync(filePath, true);
+						if (audio != null)
+						{
+							importedTracks.Add(audio);
+						}
 					}
 					catch (Exception ex)
 					{
@@ -376,7 +574,14 @@ namespace AsynCLAudio.Forms
 				}
 
 				// Fill tracks
-				this.FillTracksListBox();
+				if (this.SelectedTrack != null && this.SelectedTrack.Playing)
+				{
+					this.listBox_tracks.Items.AddRange(importedTracks.Select(t => t.Name).ToArray());
+				}
+				else
+				{
+					this.FillTracksListBox();
+				}
 
 				this.Log("Successfully imported track(s)", ofd.FileNames.Length.ToString());
 			}
@@ -473,6 +678,13 @@ namespace AsynCLAudio.Forms
 
 		private async void button_stretch_Click(object sender, EventArgs e)
 		{
+			// If CTRL down, stretch all tracks
+			if ((ModifierKeys & Keys.Control) == Keys.Control)
+			{
+				await this.StretchAll();
+				return;
+			}
+
 			// Check selected track
 			if (this.SelectedTrack == null)
 			{
@@ -530,7 +742,7 @@ namespace AsynCLAudio.Forms
 
 			await track.Normalize();
 
-			this.Log("Started stretching (" + kernelName + ")", (int)(max / 6) + " chunks, " + track.SizeInMb.ToString("F1") + " MB");
+			this.Log("Started stretching (" + kernelName + ")", (int) (max / 6) + " chunks, " + track.SizeInMb.ToString("F1") + " MB");
 
 			// Call time stretch
 			var result = await this.openClService.TimeStretch(track, kernelName, "", factor, chunkSize, overlap, progressHandler);
@@ -579,7 +791,7 @@ namespace AsynCLAudio.Forms
 			}
 
 			this.Log("Started reloading", this.SelectedTrack.Name);
-			
+
 			await this.SelectedTrack.ReloadAsync();
 
 			// Update info
@@ -600,5 +812,72 @@ namespace AsynCLAudio.Forms
 
 			this.Log("Successfully reloaded", this.SelectedTrack.Name);
 		}
+
+		private async void vScrollBar_volume_Scroll(object sender, ScrollEventArgs e)
+		{
+			int value = this.vScrollBar_volume.Value;
+			float volume = 1.0f - value / 100f;
+
+			if (this.SelectedTrack != null)
+			{
+				await this.SelectedTrack.SetVolume(volume);
+			}
+		}
+
+		private async void button_normalize_Click(object sender, EventArgs e)
+		{
+			if (this.SelectedTrack == null)
+			{
+				this.Log("Normalize error", "Please select a track to normalize", true);
+				return;
+			}
+
+			// Stop playback if running
+			if (this.SelectedTrack.Playing)
+			{
+				this.SelectedTrack.Stop();
+				this.playbackTimer.Stop();
+				this.button_playback.Text = "▶";
+				this.Log("Playback stopped ■", this.SelectedTrack.Name);
+			}
+
+			this.Log("Started normalizing", this.SelectedTrack.Name);
+			try
+			{
+				await this.SelectedTrack.Normalize();
+				this.Log("Successfully normalized", this.SelectedTrack.Name);
+			}
+			catch (Exception ex)
+			{
+				this.Log("Normalize error", ex.Message, true);
+			}
+		}
+
+		private async void button_record_Click(object sender, EventArgs e)
+		{
+			if (this.audioRecorder.Recording)
+			{
+				this.button_record.ForeColor = Color.Red;
+				this.Log("Stopping recording", "Please wait...");
+				await this.audioRecorder.StopRecordingAsync();
+				this.Log("Recording stopped", "Output saved to: " + this.audioRecorder.OutputFile);
+			}
+			else
+			{
+				this.button_record.ForeColor = Color.Black;
+				this.Log("Starting recording", "LET'S GO !!");
+				await this.audioRecorder.StartRecordingAsync();
+			}
+		}
+
+		private async void button_pause_Click(object sender, EventArgs e)
+		{
+			if (this.SelectedTrack != null)
+			{
+				await this.SelectedTrack.Pause();
+			}
+		}
+
+		
 	}
 }
