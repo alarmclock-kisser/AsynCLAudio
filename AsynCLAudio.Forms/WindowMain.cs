@@ -580,7 +580,7 @@ namespace AsynCLAudio.Forms
 				}
 				else
 				{
-					this.listBox_tracks.SelectedIndex = this.audioCollection.Count - 1;
+					this.listBox_tracks.SelectedIndex = this.listBox_tracks.Items.Count - 1;
 					this.FillTracksListBox();
 				}
 
