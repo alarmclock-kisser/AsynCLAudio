@@ -45,11 +45,23 @@ namespace AsynCLAudio.Forms
 			this.vScrollBar_volume = new VScrollBar();
 			this.button_normalize = new Button();
 			this.button_record = new Button();
-			this.textBox_recordingTime = new TextBox();
+			this.textBox_time = new TextBox();
 			this.checkBox_autoExport = new CheckBox();
 			this.button_pause = new Button();
 			this.vScrollBar_sampleRate = new VScrollBar();
 			this.button_graphColor = new Button();
+			this.textBox_recording = new TextBox();
+			this.label_zoom = new Label();
+			this.label_info_chunkSize = new Label();
+			this.label_info_overlap = new Label();
+			this.checkBox_hueGraph = new CheckBox();
+			this.numericUpDown_hueShift = new NumericUpDown();
+			this.numericUpDown_fps = new NumericUpDown();
+			this.label_info_fps = new Label();
+			this.button_backColor = new Button();
+			this.button_strobe = new Button();
+			this.comboBox_captureDevices = new ComboBox();
+			this.label_peakVolume = new Label();
 			((System.ComponentModel.ISupportInitialize) this.pictureBox_waveform).BeginInit();
 			((System.ComponentModel.ISupportInitialize) this.numericUpDown_chunkSize).BeginInit();
 			((System.ComponentModel.ISupportInitialize) this.numericUpDown_overlap).BeginInit();
@@ -57,6 +69,8 @@ namespace AsynCLAudio.Forms
 			((System.ComponentModel.ISupportInitialize) this.numericUpDown_initialBpm).BeginInit();
 			((System.ComponentModel.ISupportInitialize) this.numericUpDown_targetBpm).BeginInit();
 			((System.ComponentModel.ISupportInitialize) this.numericUpDown_stretchFactor).BeginInit();
+			((System.ComponentModel.ISupportInitialize) this.numericUpDown_hueShift).BeginInit();
+			((System.ComponentModel.ISupportInitialize) this.numericUpDown_fps).BeginInit();
 			this.SuspendLayout();
 			// 
 			// pictureBox_waveform
@@ -107,7 +121,7 @@ namespace AsynCLAudio.Forms
 			// 
 			// numericUpDown_chunkSize
 			// 
-			this.numericUpDown_chunkSize.Location = new Point(432, 301);
+			this.numericUpDown_chunkSize.Location = new Point(93, 447);
 			this.numericUpDown_chunkSize.Maximum = new decimal(new int[] { 65536, 0, 0, 0 });
 			this.numericUpDown_chunkSize.Minimum = new decimal(new int[] { 128, 0, 0, 0 });
 			this.numericUpDown_chunkSize.Name = "numericUpDown_chunkSize";
@@ -119,7 +133,7 @@ namespace AsynCLAudio.Forms
 			// 
 			this.numericUpDown_overlap.DecimalPlaces = 2;
 			this.numericUpDown_overlap.Increment = new decimal(new int[] { 5, 0, 0, 131072 });
-			this.numericUpDown_overlap.Location = new Point(432, 330);
+			this.numericUpDown_overlap.Location = new Point(174, 447);
 			this.numericUpDown_overlap.Maximum = new decimal(new int[] { 85, 0, 0, 131072 });
 			this.numericUpDown_overlap.Name = "numericUpDown_overlap";
 			this.numericUpDown_overlap.Size = new Size(75, 23);
@@ -157,7 +171,7 @@ namespace AsynCLAudio.Forms
 			// 
 			// numericUpDown_samplesPerPixel
 			// 
-			this.numericUpDown_samplesPerPixel.Location = new Point(617, 330);
+			this.numericUpDown_samplesPerPixel.Location = new Point(432, 330);
 			this.numericUpDown_samplesPerPixel.Maximum = new decimal(new int[] { 4192, 0, 0, 0 });
 			this.numericUpDown_samplesPerPixel.Minimum = new decimal(new int[] { 1, 0, 0, 0 });
 			this.numericUpDown_samplesPerPixel.Name = "numericUpDown_samplesPerPixel";
@@ -241,9 +255,9 @@ namespace AsynCLAudio.Forms
 			// 
 			// button_reset
 			// 
-			this.button_reset.Location = new Point(513, 330);
+			this.button_reset.Location = new Point(617, 330);
 			this.button_reset.Name = "button_reset";
-			this.button_reset.Size = new Size(69, 23);
+			this.button_reset.Size = new Size(75, 23);
 			this.button_reset.TabIndex = 19;
 			this.button_reset.Text = "Reset";
 			this.button_reset.UseVisualStyleBackColor = true;
@@ -261,9 +275,9 @@ namespace AsynCLAudio.Forms
 			this.listBox_log.Font = new Font("Segoe UI", 8.25F, FontStyle.Regular, GraphicsUnit.Point,  0);
 			this.listBox_log.FormattingEnabled = true;
 			this.listBox_log.ItemHeight = 13;
-			this.listBox_log.Location = new Point(12, 154);
+			this.listBox_log.Location = new Point(12, 102);
 			this.listBox_log.Name = "listBox_log";
-			this.listBox_log.Size = new Size(414, 199);
+			this.listBox_log.Size = new Size(414, 251);
 			this.listBox_log.TabIndex = 21;
 			// 
 			// vScrollBar_volume
@@ -276,7 +290,7 @@ namespace AsynCLAudio.Forms
 			// 
 			// button_normalize
 			// 
-			this.button_normalize.Location = new Point(12, 422);
+			this.button_normalize.Location = new Point(255, 447);
 			this.button_normalize.Name = "button_normalize";
 			this.button_normalize.Size = new Size(75, 23);
 			this.button_normalize.TabIndex = 23;
@@ -286,7 +300,7 @@ namespace AsynCLAudio.Forms
 			// 
 			// button_record
 			// 
-			this.button_record.ForeColor = Color.Red;
+			this.button_record.ForeColor = Color.Black;
 			this.button_record.Location = new Point(588, 272);
 			this.button_record.Name = "button_record";
 			this.button_record.Size = new Size(23, 23);
@@ -295,14 +309,14 @@ namespace AsynCLAudio.Forms
 			this.button_record.UseVisualStyleBackColor = true;
 			this.button_record.Click += this.button_record_Click;
 			// 
-			// textBox_recordingTime
+			// textBox_time
 			// 
-			this.textBox_recordingTime.Location = new Point(513, 301);
-			this.textBox_recordingTime.Name = "textBox_recordingTime";
-			this.textBox_recordingTime.PlaceholderText = "00:00.000";
-			this.textBox_recordingTime.ReadOnly = true;
-			this.textBox_recordingTime.Size = new Size(69, 23);
-			this.textBox_recordingTime.TabIndex = 25;
+			this.textBox_time.Location = new Point(513, 330);
+			this.textBox_time.Name = "textBox_time";
+			this.textBox_time.PlaceholderText = "00:00.000";
+			this.textBox_time.ReadOnly = true;
+			this.textBox_time.Size = new Size(69, 23);
+			this.textBox_time.TabIndex = 25;
 			// 
 			// checkBox_autoExport
 			// 
@@ -328,12 +342,14 @@ namespace AsynCLAudio.Forms
 			// 
 			// vScrollBar_sampleRate
 			// 
+			this.vScrollBar_sampleRate.Enabled = false;
 			this.vScrollBar_sampleRate.Location = new Point(386, 359);
 			this.vScrollBar_sampleRate.Maximum = 65536;
 			this.vScrollBar_sampleRate.Name = "vScrollBar_sampleRate";
 			this.vScrollBar_sampleRate.Size = new Size(20, 158);
 			this.vScrollBar_sampleRate.TabIndex = 28;
 			this.vScrollBar_sampleRate.Value = 32768;
+			this.vScrollBar_sampleRate.Visible = false;
 			this.vScrollBar_sampleRate.Scroll += this.vScrollBar_sampleRate_Scroll;
 			// 
 			// button_graphColor
@@ -346,16 +362,150 @@ namespace AsynCLAudio.Forms
 			this.button_graphColor.UseVisualStyleBackColor = true;
 			this.button_graphColor.Click += this.button_graphColor_Click;
 			// 
+			// textBox_recording
+			// 
+			this.textBox_recording.Location = new Point(513, 273);
+			this.textBox_recording.Name = "textBox_recording";
+			this.textBox_recording.PlaceholderText = "00:00.000";
+			this.textBox_recording.ReadOnly = true;
+			this.textBox_recording.Size = new Size(69, 23);
+			this.textBox_recording.TabIndex = 30;
+			// 
+			// label_zoom
+			// 
+			this.label_zoom.AutoSize = true;
+			this.label_zoom.Location = new Point(432, 312);
+			this.label_zoom.Name = "label_zoom";
+			this.label_zoom.Size = new Size(39, 15);
+			this.label_zoom.TabIndex = 31;
+			this.label_zoom.Text = "Zoom";
+			// 
+			// label_info_chunkSize
+			// 
+			this.label_info_chunkSize.AutoSize = true;
+			this.label_info_chunkSize.Location = new Point(93, 430);
+			this.label_info_chunkSize.Name = "label_info_chunkSize";
+			this.label_info_chunkSize.Size = new Size(64, 15);
+			this.label_info_chunkSize.TabIndex = 32;
+			this.label_info_chunkSize.Text = "Chunk size";
+			// 
+			// label_info_overlap
+			// 
+			this.label_info_overlap.AutoSize = true;
+			this.label_info_overlap.Location = new Point(174, 429);
+			this.label_info_overlap.Name = "label_info_overlap";
+			this.label_info_overlap.Size = new Size(48, 15);
+			this.label_info_overlap.TabIndex = 33;
+			this.label_info_overlap.Text = "Overlap";
+			// 
+			// checkBox_hueGraph
+			// 
+			this.checkBox_hueGraph.AutoSize = true;
+			this.checkBox_hueGraph.Location = new Point(432, 100);
+			this.checkBox_hueGraph.Name = "checkBox_hueGraph";
+			this.checkBox_hueGraph.Size = new Size(74, 19);
+			this.checkBox_hueGraph.TabIndex = 34;
+			this.checkBox_hueGraph.Text = "Hue shift";
+			this.checkBox_hueGraph.UseVisualStyleBackColor = true;
+			this.checkBox_hueGraph.CheckedChanged += this.checkBox_hueGraph_CheckedChanged;
+			// 
+			// numericUpDown_hueShift
+			// 
+			this.numericUpDown_hueShift.DecimalPlaces = 2;
+			this.numericUpDown_hueShift.Enabled = false;
+			this.numericUpDown_hueShift.Increment = new decimal(new int[] { 25, 0, 0, 131072 });
+			this.numericUpDown_hueShift.Location = new Point(432, 125);
+			this.numericUpDown_hueShift.Maximum = new decimal(new int[] { 1799, 0, 0, 65536 });
+			this.numericUpDown_hueShift.Minimum = new decimal(new int[] { 5, 0, 0, 131072 });
+			this.numericUpDown_hueShift.Name = "numericUpDown_hueShift";
+			this.numericUpDown_hueShift.Size = new Size(74, 23);
+			this.numericUpDown_hueShift.TabIndex = 35;
+			this.numericUpDown_hueShift.Value = new decimal(new int[] { 5, 0, 0, 0 });
+			this.numericUpDown_hueShift.ValueChanged += this.numericUpDown_hueShift_ValueChanged;
+			// 
+			// numericUpDown_fps
+			// 
+			this.numericUpDown_fps.Location = new Point(432, 169);
+			this.numericUpDown_fps.Maximum = new decimal(new int[] { 144, 0, 0, 0 });
+			this.numericUpDown_fps.Minimum = new decimal(new int[] { 1, 0, 0, 0 });
+			this.numericUpDown_fps.Name = "numericUpDown_fps";
+			this.numericUpDown_fps.Size = new Size(45, 23);
+			this.numericUpDown_fps.TabIndex = 36;
+			this.numericUpDown_fps.Value = new decimal(new int[] { 30, 0, 0, 0 });
+			this.numericUpDown_fps.ValueChanged += this.numericUpDown_fps_ValueChanged;
+			// 
+			// label_info_fps
+			// 
+			this.label_info_fps.AutoSize = true;
+			this.label_info_fps.Location = new Point(433, 151);
+			this.label_info_fps.Name = "label_info_fps";
+			this.label_info_fps.Size = new Size(26, 15);
+			this.label_info_fps.TabIndex = 37;
+			this.label_info_fps.Text = "FPS";
+			// 
+			// button_backColor
+			// 
+			this.button_backColor.BackColor = Color.White;
+			this.button_backColor.Location = new Point(432, 41);
+			this.button_backColor.Name = "button_backColor";
+			this.button_backColor.Size = new Size(74, 23);
+			this.button_backColor.TabIndex = 38;
+			this.button_backColor.Text = "Back";
+			this.button_backColor.UseVisualStyleBackColor = false;
+			this.button_backColor.Click += this.button_backColor_Click;
+			// 
+			// button_strobe
+			// 
+			this.button_strobe.Font = new Font("Segoe UI", 11.25F, FontStyle.Regular, GraphicsUnit.Point,  0);
+			this.button_strobe.ForeColor = Color.Black;
+			this.button_strobe.Location = new Point(483, 169);
+			this.button_strobe.Name = "button_strobe";
+			this.button_strobe.Size = new Size(23, 23);
+			this.button_strobe.TabIndex = 39;
+			this.button_strobe.Text = "🕱";
+			this.button_strobe.UseVisualStyleBackColor = true;
+			this.button_strobe.Click += this.button_strobe_Click;
+			// 
+			// comboBox_captureDevices
+			// 
+			this.comboBox_captureDevices.FormattingEnabled = true;
+			this.comboBox_captureDevices.Location = new Point(12, 41);
+			this.comboBox_captureDevices.Name = "comboBox_captureDevices";
+			this.comboBox_captureDevices.Size = new Size(414, 23);
+			this.comboBox_captureDevices.TabIndex = 40;
+			this.comboBox_captureDevices.Text = "Select audio capture device ...";
+			// 
+			// label_peakVolume
+			// 
+			this.label_peakVolume.AutoSize = true;
+			this.label_peakVolume.Location = new Point(12, 67);
+			this.label_peakVolume.Name = "label_peakVolume";
+			this.label_peakVolume.Size = new Size(100, 15);
+			this.label_peakVolume.TabIndex = 41;
+			this.label_peakVolume.Text = "Peak volume: 0.0f";
+			// 
 			// WindowMain
 			// 
 			this.AutoScaleDimensions = new SizeF(7F, 15F);
 			this.AutoScaleMode = AutoScaleMode.Font;
 			this.ClientSize = new Size(704, 681);
+			this.Controls.Add(this.label_peakVolume);
+			this.Controls.Add(this.comboBox_captureDevices);
+			this.Controls.Add(this.button_strobe);
+			this.Controls.Add(this.button_backColor);
+			this.Controls.Add(this.label_info_fps);
+			this.Controls.Add(this.numericUpDown_fps);
+			this.Controls.Add(this.numericUpDown_hueShift);
+			this.Controls.Add(this.checkBox_hueGraph);
+			this.Controls.Add(this.label_info_overlap);
+			this.Controls.Add(this.label_info_chunkSize);
+			this.Controls.Add(this.label_zoom);
+			this.Controls.Add(this.textBox_recording);
 			this.Controls.Add(this.button_graphColor);
 			this.Controls.Add(this.vScrollBar_sampleRate);
 			this.Controls.Add(this.button_pause);
 			this.Controls.Add(this.checkBox_autoExport);
-			this.Controls.Add(this.textBox_recordingTime);
+			this.Controls.Add(this.textBox_time);
 			this.Controls.Add(this.button_record);
 			this.Controls.Add(this.button_normalize);
 			this.Controls.Add(this.vScrollBar_volume);
@@ -391,6 +541,8 @@ namespace AsynCLAudio.Forms
 			((System.ComponentModel.ISupportInitialize) this.numericUpDown_initialBpm).EndInit();
 			((System.ComponentModel.ISupportInitialize) this.numericUpDown_targetBpm).EndInit();
 			((System.ComponentModel.ISupportInitialize) this.numericUpDown_stretchFactor).EndInit();
+			((System.ComponentModel.ISupportInitialize) this.numericUpDown_hueShift).EndInit();
+			((System.ComponentModel.ISupportInitialize) this.numericUpDown_fps).EndInit();
 			this.ResumeLayout(false);
 			this.PerformLayout();
 		}
@@ -423,10 +575,22 @@ namespace AsynCLAudio.Forms
 		private VScrollBar vScrollBar_volume;
 		private Button button_normalize;
 		private Button button_record;
-		private TextBox textBox_recordingTime;
+		private TextBox textBox_time;
 		private CheckBox checkBox_autoExport;
 		private Button button_pause;
 		private VScrollBar vScrollBar_sampleRate;
 		private Button button_graphColor;
+		private TextBox textBox_recording;
+		private Label label_zoom;
+		private Label label_info_chunkSize;
+		private Label label_info_overlap;
+		private CheckBox checkBox_hueGraph;
+		private NumericUpDown numericUpDown_hueShift;
+		private NumericUpDown numericUpDown_fps;
+		private Label label_info_fps;
+		private Button button_backColor;
+		private Button button_strobe;
+		private ComboBox comboBox_captureDevices;
+		private Label label_peakVolume;
 	}
 }

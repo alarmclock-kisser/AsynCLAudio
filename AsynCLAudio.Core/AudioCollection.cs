@@ -15,6 +15,7 @@ namespace AsynCLAudio.Core
 		public int Count => this.tracks.Count;
 
 		public Color GraphColor { get; set; } = Color.BlueViolet;
+		public Color BackColor { get; set; } = Color.White;
 
 		public AudioObj? this[Guid guid]
 		{

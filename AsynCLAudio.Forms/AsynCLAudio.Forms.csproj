@@ -10,6 +10,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Remove="WindowMain.cs~RF6be49b.TMP" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Content Include="AsynCL.favicon.ico" />
   </ItemGroup>
 

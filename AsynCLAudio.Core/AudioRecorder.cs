@@ -1,93 +1,180 @@
-﻿using NAudio.Wave;
+﻿using NAudio.CoreAudioApi;
+using NAudio.Wave;
 using System;
-using System.Collections.Concurrent;
 using System.IO;
-using System.Threading.Tasks;
+using System.Linq;
+using System.Runtime.CompilerServices;
 
-namespace AsynCLAudio.Core
+public static class AudioRecorder
 {
-	public class AudioRecorder : IDisposable
+	private static WasapiLoopbackCapture? _capture;
+	private static MMDevice? _mmDevice;
+	private static WaveFileWriter? _writer;
+
+	public static bool IsRecording { get; private set; } = false;
+
+	public static float GetPeakVolume(MMDevice? useDevice = null)
 	{
-		private WasapiLoopbackCapture? loopbackCapture;
-		private WaveFileWriter? waveWriter;
-		private readonly ConcurrentDictionary<long, byte[]> recordedChunks = new();
-		private long chunkId = 0;
-		private bool isRecording = false;
-		public bool Recording => this.isRecording;
-
-		public int SampleRate { get; private set; } = 48000;
-		public int BitDepth { get; private set; } = 16;
-		public int Channels { get; private set; } = 2;
-
-		// MyMusic + AsynCLAudio + Output
-		public string OutputPath { get; set; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyMusic), "AsynCLAudio", "Output");
-		public string OutputFile { get; private set; } = string.Empty;
-
-		public AudioRecorder(int sampleRate = 48000, int bitDepth = 16, int channels = 2)
+		if (useDevice != null)
 		{
-			this.SampleRate = sampleRate;
-			this.BitDepth = bitDepth;
-			this.Channels = channels;
-			Directory.CreateDirectory(this.OutputPath);
+			try
+			{
+				return useDevice.AudioMeterInformation.MasterPeakValue;
+			}
+			catch (Exception ex)
+			{
+				Console.WriteLine($"Fehler beim Abrufen der Lautstärke: {ex.Message}");
+				return 0.0f;
+			}
 		}
 
-		public async Task StartRecordingAsync()
+		if (_mmDevice == null)
 		{
-			if (this.isRecording)
+			Console.WriteLine("Kein Gerät ausgewählt.");
+			return 0.0f;
+		}
+		try
+		{
+			return _mmDevice.AudioMeterInformation.MasterPeakValue;
+		}
+		catch (Exception ex)
+		{
+			Console.WriteLine($"Fehler beim Abrufen der Lautstärke: {ex.Message}");
+			return 0.0f;
+		}
+	}
+
+	public static void StartRecording(string filePath, MMDevice? mmDevice = null)
+	{
+		if (IsRecording)
+		{
+			Console.WriteLine("Aufnahme läuft bereits.");
+			return;
+		}
+
+		try
+		{
+			MMDevice? captureDevice = null;
+			if (mmDevice != null)
 			{
-				return;
+				captureDevice = mmDevice;
 			}
 
-			this.loopbackCapture = new WasapiLoopbackCapture();
-			this.loopbackCapture.DataAvailable += this.OnDataAvailable;
-			this.loopbackCapture.RecordingStopped += this.OnRecordingStopped;
+			// Nutze das gefundene Gerät oder das Standardgerät als Fallback
+			_capture = captureDevice != null ? new WasapiLoopbackCapture(captureDevice) : new WasapiLoopbackCapture();
 
-			this.isRecording = true;
-			this.loopbackCapture.StartRecording();
+			_writer = new WaveFileWriter(filePath, _capture.WaveFormat);
 
-			await Task.CompletedTask;
+			_capture.DataAvailable += OnDataAvailable;
+			_capture.RecordingStopped += OnRecordingStopped;
+
+			_capture.StartRecording();
+			IsRecording = true;
+			Console.WriteLine($"Aufnahme gestartet. Gerät: {captureDevice?.FriendlyName ?? "Standard"}");
+		}
+		catch (Exception ex)
+		{
+			Console.WriteLine($"Fehler beim Starten der Aufnahme: {ex.Message}");
+			Cleanup();
+		}
+	}
+
+	/// <summary>
+	/// Stoppt die laufende Aufnahme.
+	/// </summary>
+	public static void StopRecording()
+	{
+		if (!IsRecording)
+		{
+			Console.WriteLine("Keine Aufnahme aktiv.");
+			return;
 		}
 
-		private void OnDataAvailable(object? sender, WaveInEventArgs e)
-		{
-			byte[] audioChunk = new byte[e.BytesRecorded];
-			Buffer.BlockCopy(e.Buffer, 0, audioChunk, 0, e.BytesRecorded);
-			this.recordedChunks.TryAdd(this.chunkId++, audioChunk);
+		Console.WriteLine("Aufnahme wird gestoppt...");
+		_capture?.StopRecording();
+	}
 
-			// Optional: Direkt in eine WAV-Datei schreiben
-			this.waveWriter?.Write(e.Buffer, 0, e.BytesRecorded);
-		}
+	public static MMDevice? GetActivePlaybackDevice()
+	{
+		var enumerator = new MMDeviceEnumerator();
+		var devices = enumerator.EnumerateAudioEndPoints(DataFlow.All, DeviceState.All);
 
-		private void OnRecordingStopped(object? sender, StoppedEventArgs e)
-		{
-			this.waveWriter?.Dispose();
-			this.waveWriter = null;
-			this.isRecording = false;
-		}
+		MMDevice? activeDevice = null;
+		float maxPeak = 0.0f;
 
-		public async Task StopRecordingAsync(string fileName = "output")
+		foreach (var device in devices)
 		{
-			if (!this.isRecording)
+			float peak = device.AudioMeterInformation.MasterPeakValue;
+			if (peak > maxPeak)
 			{
-				return;
+				maxPeak = peak;
+				activeDevice = device;
 			}
-
-			Guid guid = Guid.NewGuid();
-			
-			fileName = $"{fileName}_{guid:N}.wav";
-
-			string filePath = Path.Combine(this.OutputPath, fileName);
-			this.OutputFile = filePath;
-			this.waveWriter = new WaveFileWriter(filePath, this.loopbackCapture?.WaveFormat);
-
-			this.loopbackCapture?.StopRecording();
-			await Task.CompletedTask;
 		}
 
-		public void Dispose()
+		_mmDevice = activeDevice;
+		return activeDevice;
+	}
+
+	public static MMDevice? GetDefaultPlaybackDevice()
+	{
+		var enumerator = new MMDeviceEnumerator();
+		return enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
+	}
+
+	public static MMDevice[] GetCaptureDevices()
+	{
+		var enumerator = new MMDeviceEnumerator();
+		return enumerator.EnumerateAudioEndPoints(DataFlow.All, DeviceState.All).ToArray();
+	}
+
+	public static void SetCaptureDevice(MMDevice? device)
+	{
+		if (device == null)
 		{
-			this.loopbackCapture?.Dispose();
-			this.waveWriter?.Dispose();
+			Console.WriteLine("Ungültiges Gerät.");
+			return;
 		}
+		if (_capture != null && IsRecording)
+		{
+			Console.WriteLine("Aufnahme läuft bereits. Stoppe die Aufnahme, bevor du das Gerät änderst.");
+			return;
+		}
+		try
+		{
+			_capture?.Dispose();
+			_capture = new WasapiLoopbackCapture(device);
+			Console.WriteLine($"Gerät auf {device.FriendlyName} gesetzt.");
+		}
+		catch (Exception ex)
+		{
+			Console.WriteLine($"Fehler beim Setzen des Geräts: {ex.Message}");
+		}
+	}
+
+	private static void OnDataAvailable(object? sender, WaveInEventArgs e)
+	{
+		_writer?.Write(e.Buffer, 0, e.BytesRecorded);
+	}
+
+	private static void OnRecordingStopped(object? sender, StoppedEventArgs e)
+	{
+		Console.WriteLine("Aufnahme gestoppt.");
+
+		if (e.Exception != null)
+		{
+			Console.WriteLine($"Fehler während der Aufnahme: {e.Exception.Message}");
+		}
+
+		Cleanup();
+	}
+
+	private static void Cleanup()
+	{
+		_writer?.Dispose();
+		_writer = null;
+		_capture?.Dispose();
+		_capture = null;
+		IsRecording = false;
 	}
 }

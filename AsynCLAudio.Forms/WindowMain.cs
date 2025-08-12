@@ -1,5 +1,6 @@
 ﻿using AsynCLAudio.Core;
 using AsynCLAudio.OpenCl;
+using NAudio.CoreAudioApi;
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 using Timer = System.Threading.Timer;
@@ -11,8 +12,6 @@ namespace AsynCLAudio.Forms
 		private readonly AudioCollection audioCollection;
 		private readonly OpenClService openClService;
 
-		private readonly AudioRecorder audioRecorder;
-
 		private bool disposing = false;
 
 		public AudioObj? SelectedTrack => this.audioCollection[this.listBox_tracks.SelectedItem?.ToString() ?? string.Empty];
@@ -21,7 +20,13 @@ namespace AsynCLAudio.Forms
 		private Dictionary<NumericUpDown, long> previousNumericValues = [];
 
 		private CancellationToken? playbackCancellationToken;
+		private float Volume => 1.0f - this.vScrollBar_volume.Value / 100f;
 		private System.Timers.Timer playbackTimer = new(50);
+		private Color graphHue = Color.Red;
+
+		private bool recording = false;
+		private System.Timers.Timer recordingTimer = new(120);
+		private DateTime recordingTime = DateTime.Now;
 
 		public WindowMain(AudioCollection audioCollection, OpenClService openClService)
 		{
@@ -30,7 +35,6 @@ namespace AsynCLAudio.Forms
 
 			this.InitializeComponent();
 
-			this.audioRecorder = new AudioRecorder();
 
 			this.UpdateGraphColorButton();
 
@@ -38,8 +42,27 @@ namespace AsynCLAudio.Forms
 			this.SetupContextMenuForListBox();
 			this.RegisterNumericToSecondPow(this.numericUpDown_chunkSize);
 			this.listBox_tracks.SelectedIndexChanged += (sender, e) => this.UpdateInfoView();
+			this.recordingTimer.Elapsed += RecordingTimer_Elapsed;
 			this.listBox_log.DoubleClick += this.listBox_log_DoubleClick;
 			this.FillDevicesComboBox(2);
+			this.comboBox_captureDevices.Items.AddRange(AudioRecorder.GetCaptureDevices());
+			var standardCaptureDevice = AudioRecorder.GetDefaultPlaybackDevice();
+			if (standardCaptureDevice != null)
+			{
+				this.comboBox_captureDevices.SelectedItem = standardCaptureDevice;
+			}
+			else if (this.comboBox_captureDevices.Items.Count > 0)
+			{
+				this.comboBox_captureDevices.SelectedIndex = 0;
+			}
+			this.comboBox_captureDevices.SelectedIndexChanged += (sender, e) =>
+			{
+				if (this.comboBox_captureDevices.SelectedItem is MMDevice device)
+				{
+					AudioRecorder.SetCaptureDevice(device);
+					this.Log("Set capture device", device.FriendlyName);
+				}
+			};
 			this.UpdateInfoView();
 		}
 
@@ -47,6 +70,12 @@ namespace AsynCLAudio.Forms
 		// ----- Methods ----- \\
 		protected override void Dispose(bool disposing = true)
 		{
+			// End recording if running
+			if (this.recording)
+			{
+				this.button_record.PerformClick();
+			}
+
 			this.playbackTimer.Stop();
 			this.playbackTimer.Elapsed -= (sender, e) => this.UpdateWaveform().GetAwaiter().GetResult();
 
@@ -58,6 +87,12 @@ namespace AsynCLAudio.Forms
 				if (this.playbackTimer != null)
 				{
 					this.playbackTimer.Dispose();
+				}
+				if (this.recordingTimer != null)
+				{
+					this.recordingTimer.Stop();
+					this.recordingTimer.Elapsed -= RecordingTimer_Elapsed;
+					this.recordingTimer.Dispose();
 				}
 				if (this.components != null)
 				{
@@ -202,6 +237,11 @@ namespace AsynCLAudio.Forms
 				"Load: " + track.ElapsedLoadingTime.ToString("F1") + " ms" + Environment.NewLine +
 				"Process: " + track.ElapsedProcessingTime.ToString("F1") + " ms";
 
+			if (track.Bpm > 1000)
+			{
+				track.UpdateBpm(track.Bpm / 100f);
+			}
+
 			this.numericUpDown_initialBpm.Value = (decimal) Math.Max((float) this.numericUpDown_initialBpm.Minimum, (float) (track.Bpm));
 
 			this.button_export.Enabled = true;
@@ -256,8 +296,20 @@ namespace AsynCLAudio.Forms
 				return;
 			}
 
+			// Get peak volume for selected mmDevice
+			MMDevice? selectedDevice = this.comboBox_captureDevices.SelectedItem as MMDevice;
+			float peakVolume = AudioRecorder.GetPeakVolume(selectedDevice);
+			this.label_peakVolume.ForeColor = peakVolume > 0.0f ? Color.Green : Color.DarkGray;
+			this.label_peakVolume.Text = $"Peak Volume: {peakVolume:F6}";
+
+			// If hueShift checked, apply hue shift to graph color
+			if (this.checkBox_hueGraph.Checked)
+			{
+				this.GetHueShiftedColor();
+			}
+
 			// Dispose previous image
-			this.pictureBox_waveform.Image = await this.SelectedTrack.GetWaveformImageSimpleAsync(null, this.pictureBox_waveform.Width, this.pictureBox_waveform.Height, (int) this.numericUpDown_samplesPerPixel.Value, graphColor: this.audioCollection.GraphColor);
+			this.pictureBox_waveform.Image = await this.SelectedTrack.GetWaveformImageSimpleAsync(null, this.pictureBox_waveform.Width, this.pictureBox_waveform.Height, (int) this.numericUpDown_samplesPerPixel.Value, graphColor: this.audioCollection.GraphColor, backgroundColor: this.audioCollection.BackColor);
 			this.pictureBox_waveform.Invalidate();
 			GC.Collect();
 		}
@@ -644,8 +696,6 @@ namespace AsynCLAudio.Forms
 				return;
 			}
 
-			float volume = 1.0f;
-
 			if (this.SelectedTrack.Playing)
 			{
 				this.playbackTimer.Stop();
@@ -659,9 +709,14 @@ namespace AsynCLAudio.Forms
 				this.playbackTimer.Elapsed += (sender, e) => this.UpdateWaveform().GetAwaiter().GetResult();
 				this.playbackTimer.Start();
 				this.playbackCancellationToken = new();
-				await this.SelectedTrack.Play(this.playbackCancellationToken.Value, null, volume);
+				await this.SelectedTrack.Play(this.playbackCancellationToken.Value, null, this.Volume);
 				this.button_playback.Text = "■";
 				this.Log("Playback started ▶", this.SelectedTrack.Name);
+
+				if (this.recording)
+				{
+					AudioRecorder.GetActivePlaybackDevice();
+				}
 			}
 		}
 
@@ -887,21 +942,57 @@ namespace AsynCLAudio.Forms
 			}
 		}
 
-		private async void button_record_Click(object sender, EventArgs e)
+		private void button_record_Click(object sender, EventArgs e)
 		{
-			if (this.audioRecorder.Recording)
+			string outDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyMusic), "AsynCLAudio", "Recorded");
+			if (!Directory.Exists(outDir))
 			{
+				Directory.CreateDirectory(outDir);
+				this.Log("Created output directory", outDir);
+			}
+
+			string fileName = Path.Combine(outDir, $"LiveRecording_{DateTime.Now:ddMMyyyy_HHmmss}.wav");
+
+			if (!this.recording)
+			{
+				this.comboBox_captureDevices.Enabled = false;
 				this.button_record.ForeColor = Color.Red;
-				this.Log("Stopping recording", "Please wait...");
-				await this.audioRecorder.StopRecordingAsync();
-				this.Log("Recording stopped", "Output saved to: " + this.audioRecorder.OutputFile);
+				this.textBox_recording.ForeColor = Color.Red;
+				this.Log("Started recording...");
+				this.recordingTime = DateTime.Now;
+
+				// Timer starten, wenn die Aufnahme beginnt
+				this.recordingTimer.Start();
+
+				MMDevice? selectedDevice = this.comboBox_captureDevices.SelectedItem as MMDevice;
+				AudioRecorder.StartRecording(fileName, selectedDevice);
 			}
 			else
 			{
 				this.button_record.ForeColor = Color.Black;
-				this.Log("Starting recording", "LET'S GO !!");
-				await this.audioRecorder.StartRecordingAsync();
+				this.Log("Stopped recording.", (DateTime.Now - this.recordingTime).ToString("hh\\:mm\\:ss\\.fff"));
+
+				// Timer stoppen, wenn die Aufnahme endet
+				this.recordingTimer.Stop();
+
+				this.textBox_recording.ForeColor = Color.Black;
+
+				AudioRecorder.StopRecording();
+				this.comboBox_captureDevices.Enabled = true;
 			}
+
+			this.recording = !this.recording;
+		}
+
+		private void RecordingTimer_Elapsed(object? sender, System.Timers.ElapsedEventArgs e)
+		{
+			// Da das Timer-Event in einem anderen Thread läuft,
+			// müssen wir Invoke verwenden, um auf UI-Controls zuzugreifen
+			this.Invoke(() =>
+			{
+				TimeSpan elapsedTime = DateTime.Now - this.recordingTime;
+				this.textBox_recording.Text = elapsedTime.ToString(@"mm\:ss\.fff");
+			});
 		}
 
 		private async void button_pause_Click(object sender, EventArgs e)
@@ -914,6 +1005,19 @@ namespace AsynCLAudio.Forms
 
 		private void button_graphColor_Click(object sender, EventArgs e)
 		{
+			// If CTRL down -> Randomize graph color
+			if ((ModifierKeys & Keys.Control) == Keys.Control)
+			{
+				this.audioCollection.GraphColor = Color.FromArgb(
+					Random.Shared.Next(256),
+					Random.Shared.Next(256),
+					Random.Shared.Next(256));
+				this.button_graphColor.BackColor = this.audioCollection.GraphColor;
+				this.Log("Graph color randomized", this.audioCollection.GraphColor.ToString());
+				this.UpdateGraphColorButton();
+				return;
+			}
+
 			// ColorDialog to select graph color
 			ColorDialog colorDialog = new()
 			{
@@ -935,5 +1039,161 @@ namespace AsynCLAudio.Forms
 			this.UpdateGraphColorButton();
 		}
 
+		private void checkBox_hueGraph_CheckedChanged(object sender, EventArgs e)
+		{
+			this.graphHue = Color.Red;
+
+			if (this.checkBox_hueGraph.Checked)
+			{
+				this.numericUpDown_hueShift.Enabled = true;
+			}
+			else
+			{
+				this.numericUpDown_hueShift.Enabled = false;
+			}
+		}
+
+		private async void numericUpDown_hueShift_ValueChanged(object sender, EventArgs e)
+		{
+			await this.UpdateWaveform();
+		}
+
+		private void numericUpDown_fps_ValueChanged(object sender, EventArgs e)
+		{
+			// Prevent frequent updates (cooldown = 250 ms)
+			if (this.isProcessing)
+			{
+				return;
+			}
+
+			this.isProcessing = true;
+
+			try
+			{
+				int fps = (int) this.numericUpDown_fps.Value;
+				if (fps < 1)
+				{
+					fps = 1;
+				}
+				else if (fps > 144)
+				{
+					fps = 144;
+				}
+
+				this.playbackTimer.Interval = 1000 / fps;
+			}
+			finally
+			{
+				this.isProcessing = false;
+			}
+		}
+
+		private Color GetHueShiftedColor()
+		{
+			Color baseColor = this.audioCollection.GraphColor;
+			float shiftDelta = (float) this.numericUpDown_hueShift.Value;
+
+			// Konvertiere RGB zu HSL
+			float hue = baseColor.GetHue();
+			float saturation = baseColor.GetSaturation();
+			float brightness = baseColor.GetBrightness();
+
+			// Wende den Shift an
+			hue = (hue + shiftDelta) % 360;
+			if (hue < 0)
+			{
+				hue += 360;
+			}
+
+			// Konvertiere HSL zurück zu RGB
+			Color newColor = ColorFromHsl(hue, saturation, brightness);
+
+			// Update graph color
+			this.audioCollection.GraphColor = newColor;
+			this.UpdateGraphColorButton();
+
+			return newColor;
+		}
+
+		private static Color ColorFromHsl(float h, float s, float l)
+		{
+			if (s == 0)
+			{
+				int l_byte = (int) (l * 255.0f);
+				return Color.FromArgb(l_byte, l_byte, l_byte);
+			}
+
+			float v1, v2;
+			float h_norm = h / 360.0f;
+
+			v2 = (l < 0.5f) ? (l * (1.0f + s)) : ((l + s) - (l * s));
+			v1 = 2.0f * l - v2;
+
+			byte r = (byte) (255.0f * HueToRgb(v1, v2, h_norm + (1.0f / 3.0f)));
+			byte g = (byte) (255.0f * HueToRgb(v1, v2, h_norm));
+			byte b = (byte) (255.0f * HueToRgb(v1, v2, h_norm - (1.0f / 3.0f)));
+
+			return Color.FromArgb(r, g, b);
+		}
+
+		private static float HueToRgb(float v1, float v2, float vH)
+		{
+			if (vH < 0.0f) vH += 1.0f;
+			if (vH > 1.0f) vH -= 1.0f;
+			if ((6.0f * vH) < 1.0f) return (v1 + (v2 - v1) * 6.0f * vH);
+			if ((2.0f * vH) < 1.0f) return v2;
+			if ((3.0f * vH) < 2.0f) return (v1 + (v2 - v1) * ((2.0f / 3.0f) - vH) * 6.0f);
+			return v1;
+		}
+
+		private async void button_backColor_Click(object sender, EventArgs e)
+		{
+			// ColorDialog to select background color
+			ColorDialog colorDialog = new()
+			{
+				AllowFullOpen = true,
+				AnyColor = true,
+				ShowHelp = true,
+				FullOpen = true,
+				Color = this.BackColor
+			};
+
+			if (colorDialog.ShowDialog() == DialogResult.OK)
+			{
+				this.audioCollection.BackColor = colorDialog.Color;
+				this.Log("Background color changed", this.BackColor.ToString());
+
+				await this.UpdateWaveform();
+			}
+		}
+
+		private async void button_strobe_Click(object sender, EventArgs e)
+		{
+			if (this.button_strobe.ForeColor == Color.Black)
+			{
+				// Enable strobe effect
+				this.button_strobe.ForeColor = Color.Crimson;
+				this.Log("Strobe effect enabled", "Click again to disable");
+
+				this.checkBox_hueGraph.Checked = true;
+				this.numericUpDown_hueShift.Enabled = true;
+				this.numericUpDown_hueShift.Value = 100;
+				this.numericUpDown_fps.Value = 75;
+				this.audioCollection.BackColor = Color.Black;
+			}
+			else
+			{
+				// Disable strobe effect
+				this.button_strobe.ForeColor = Color.Black;
+				this.Log("Strobe effect disabled", "Click again to enable");
+				this.checkBox_hueGraph.Checked = false;
+				this.numericUpDown_hueShift.Enabled = false;
+				this.numericUpDown_hueShift.Value = 5;
+				this.numericUpDown_fps.Value = 30;
+				this.audioCollection.BackColor = this.button_backColor.BackColor;
+			}
+
+			await this.UpdateWaveform();
+		}
 	}
 }
