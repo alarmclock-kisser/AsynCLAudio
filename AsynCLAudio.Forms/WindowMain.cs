@@ -12,7 +12,6 @@ namespace AsynCLAudio.Forms
 		private readonly OpenClService openClService;
 
 		private readonly AudioRecorder audioRecorder;
-		private Timer? recordingTimer = null;
 
 		private bool disposing = false;
 
@@ -32,6 +31,8 @@ namespace AsynCLAudio.Forms
 			this.InitializeComponent();
 
 			this.audioRecorder = new AudioRecorder();
+
+			this.UpdateGraphColorButton();
 
 			// Event for right-click on entry -> remove context menu (selected track)
 			this.SetupContextMenuForListBox();
@@ -256,7 +257,7 @@ namespace AsynCLAudio.Forms
 			}
 
 			// Dispose previous image
-			this.pictureBox_waveform.Image = await this.SelectedTrack.GetWaveformImageSimpleAsync(null, this.pictureBox_waveform.Width, this.pictureBox_waveform.Height, (int) this.numericUpDown_samplesPerPixel.Value);
+			this.pictureBox_waveform.Image = await this.SelectedTrack.GetWaveformImageSimpleAsync(null, this.pictureBox_waveform.Width, this.pictureBox_waveform.Height, (int) this.numericUpDown_samplesPerPixel.Value, graphColor: this.audioCollection.GraphColor);
 			this.pictureBox_waveform.Invalidate();
 			GC.Collect();
 		}
@@ -317,6 +318,19 @@ namespace AsynCLAudio.Forms
 					this.isProcessing = false;
 				}
 			};
+		}
+
+		private void UpdateGraphColorButton()
+		{
+			this.button_graphColor.BackColor = this.audioCollection.GraphColor;
+			if (this.button_graphColor.BackColor.GetBrightness() < 0.5f)
+			{
+				this.button_graphColor.ForeColor = Color.White;
+			}
+			else
+			{
+				this.button_graphColor.ForeColor = Color.Black;
+			}
 		}
 
 		private void SetupContextMenuForListBox()
@@ -898,6 +912,28 @@ namespace AsynCLAudio.Forms
 			}
 		}
 
-		
+		private void button_graphColor_Click(object sender, EventArgs e)
+		{
+			// ColorDialog to select graph color
+			ColorDialog colorDialog = new()
+			{
+				AllowFullOpen = true,
+				AnyColor = true,
+				ShowHelp = true,
+				FullOpen = true,
+				Color = this.audioCollection.GraphColor
+			};
+
+			if (colorDialog.ShowDialog() == DialogResult.OK)
+			{
+				this.audioCollection.GraphColor = colorDialog.Color;
+				this.button_graphColor.BackColor = this.audioCollection.GraphColor;
+				this.Log("Graph color changed", this.audioCollection.GraphColor.ToString());
+			}
+
+			// Update button color
+			this.UpdateGraphColorButton();
+		}
+
 	}
 }

@@ -49,6 +49,7 @@ namespace AsynCLAudio.Forms
 			this.checkBox_autoExport = new CheckBox();
 			this.button_pause = new Button();
 			this.vScrollBar_sampleRate = new VScrollBar();
+			this.button_graphColor = new Button();
 			((System.ComponentModel.ISupportInitialize) this.pictureBox_waveform).BeginInit();
 			((System.ComponentModel.ISupportInitialize) this.numericUpDown_chunkSize).BeginInit();
 			((System.ComponentModel.ISupportInitialize) this.numericUpDown_overlap).BeginInit();
@@ -335,11 +336,22 @@ namespace AsynCLAudio.Forms
 			this.vScrollBar_sampleRate.Value = 32768;
 			this.vScrollBar_sampleRate.Scroll += this.vScrollBar_sampleRate_Scroll;
 			// 
+			// button_graphColor
+			// 
+			this.button_graphColor.Location = new Point(432, 12);
+			this.button_graphColor.Name = "button_graphColor";
+			this.button_graphColor.Size = new Size(74, 23);
+			this.button_graphColor.TabIndex = 29;
+			this.button_graphColor.Text = "Color";
+			this.button_graphColor.UseVisualStyleBackColor = true;
+			this.button_graphColor.Click += this.button_graphColor_Click;
+			// 
 			// WindowMain
 			// 
 			this.AutoScaleDimensions = new SizeF(7F, 15F);
 			this.AutoScaleMode = AutoScaleMode.Font;
 			this.ClientSize = new Size(704, 681);
+			this.Controls.Add(this.button_graphColor);
 			this.Controls.Add(this.vScrollBar_sampleRate);
 			this.Controls.Add(this.button_pause);
 			this.Controls.Add(this.checkBox_autoExport);
@@ -415,5 +427,6 @@ namespace AsynCLAudio.Forms
 		private CheckBox checkBox_autoExport;
 		private Button button_pause;
 		private VScrollBar vScrollBar_sampleRate;
+		private Button button_graphColor;
 	}
 }

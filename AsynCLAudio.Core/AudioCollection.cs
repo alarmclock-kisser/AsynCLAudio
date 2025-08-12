@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Drawing;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -12,6 +13,8 @@ namespace AsynCLAudio.Core
 		private ConcurrentDictionary<Guid, AudioObj> tracks = [];
 		public IReadOnlyList<AudioObj> Tracks => this.tracks.Values.ToList();
 		public int Count => this.tracks.Count;
+
+		public Color GraphColor { get; set; } = Color.BlueViolet;
 
 		public AudioObj? this[Guid guid]
 		{
@@ -33,9 +36,9 @@ namespace AsynCLAudio.Core
 			get => pointer != IntPtr.Zero ? this.tracks.Values.FirstOrDefault(t => t.Pointer == pointer) : null;
 		}
 
-		public AudioCollection()
+		public AudioCollection(Color? graphColor = null)
 		{
-
+			this.GraphColor = graphColor ?? Color.BlueViolet;
 		}
 
 		public async Task<AudioObj?> ImportAsync(string filePath, bool linearLoad = false)
