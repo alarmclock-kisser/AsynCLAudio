@@ -48,7 +48,6 @@ namespace AsynCLAudio.Forms
 			this.textBox_time = new TextBox();
 			this.checkBox_autoExport = new CheckBox();
 			this.button_pause = new Button();
-			this.vScrollBar_sampleRate = new VScrollBar();
 			this.button_graphColor = new Button();
 			this.textBox_recording = new TextBox();
 			this.label_zoom = new Label();
@@ -62,6 +61,7 @@ namespace AsynCLAudio.Forms
 			this.button_strobe = new Button();
 			this.comboBox_captureDevices = new ComboBox();
 			this.label_peakVolume = new Label();
+			this.button_level = new Button();
 			((System.ComponentModel.ISupportInitialize) this.pictureBox_waveform).BeginInit();
 			((System.ComponentModel.ISupportInitialize) this.numericUpDown_chunkSize).BeginInit();
 			((System.ComponentModel.ISupportInitialize) this.numericUpDown_overlap).BeginInit();
@@ -290,7 +290,7 @@ namespace AsynCLAudio.Forms
 			// 
 			// button_normalize
 			// 
-			this.button_normalize.Location = new Point(255, 447);
+			this.button_normalize.Location = new Point(617, 198);
 			this.button_normalize.Name = "button_normalize";
 			this.button_normalize.Size = new Size(75, 23);
 			this.button_normalize.TabIndex = 23;
@@ -339,18 +339,6 @@ namespace AsynCLAudio.Forms
 			this.button_pause.Text = "||";
 			this.button_pause.UseVisualStyleBackColor = true;
 			this.button_pause.Click += this.button_pause_Click;
-			// 
-			// vScrollBar_sampleRate
-			// 
-			this.vScrollBar_sampleRate.Enabled = false;
-			this.vScrollBar_sampleRate.Location = new Point(386, 359);
-			this.vScrollBar_sampleRate.Maximum = 65536;
-			this.vScrollBar_sampleRate.Name = "vScrollBar_sampleRate";
-			this.vScrollBar_sampleRate.Size = new Size(20, 158);
-			this.vScrollBar_sampleRate.TabIndex = 28;
-			this.vScrollBar_sampleRate.Value = 32768;
-			this.vScrollBar_sampleRate.Visible = false;
-			this.vScrollBar_sampleRate.Scroll += this.vScrollBar_sampleRate_Scroll;
 			// 
 			// button_graphColor
 			// 
@@ -484,11 +472,22 @@ namespace AsynCLAudio.Forms
 			this.label_peakVolume.TabIndex = 41;
 			this.label_peakVolume.Text = "Peak volume: 0.0f";
 			// 
+			// button_level
+			// 
+			this.button_level.Location = new Point(617, 227);
+			this.button_level.Name = "button_level";
+			this.button_level.Size = new Size(75, 23);
+			this.button_level.TabIndex = 42;
+			this.button_level.Text = "Level";
+			this.button_level.UseVisualStyleBackColor = true;
+			this.button_level.Click += this.button_level_Click;
+			// 
 			// WindowMain
 			// 
 			this.AutoScaleDimensions = new SizeF(7F, 15F);
 			this.AutoScaleMode = AutoScaleMode.Font;
 			this.ClientSize = new Size(704, 681);
+			this.Controls.Add(this.button_level);
 			this.Controls.Add(this.label_peakVolume);
 			this.Controls.Add(this.comboBox_captureDevices);
 			this.Controls.Add(this.button_strobe);
@@ -502,7 +501,6 @@ namespace AsynCLAudio.Forms
 			this.Controls.Add(this.label_zoom);
 			this.Controls.Add(this.textBox_recording);
 			this.Controls.Add(this.button_graphColor);
-			this.Controls.Add(this.vScrollBar_sampleRate);
 			this.Controls.Add(this.button_pause);
 			this.Controls.Add(this.checkBox_autoExport);
 			this.Controls.Add(this.textBox_time);
@@ -530,7 +528,9 @@ namespace AsynCLAudio.Forms
 			this.Controls.Add(this.button_import);
 			this.Controls.Add(this.listBox_tracks);
 			this.Controls.Add(this.pictureBox_waveform);
+			this.MaximizeBox = false;
 			this.MaximumSize = new Size(720, 720);
+			this.MinimizeBox = false;
 			this.MinimumSize = new Size(720, 720);
 			this.Name = "WindowMain";
 			this.Text = "AsynCLAudio (Forms)";
@@ -578,7 +578,6 @@ namespace AsynCLAudio.Forms
 		private TextBox textBox_time;
 		private CheckBox checkBox_autoExport;
 		private Button button_pause;
-		private VScrollBar vScrollBar_sampleRate;
 		private Button button_graphColor;
 		private TextBox textBox_recording;
 		private Label label_zoom;
@@ -592,5 +591,6 @@ namespace AsynCLAudio.Forms
 		private Button button_strobe;
 		private ComboBox comboBox_captureDevices;
 		private Label label_peakVolume;
+		private Button button_level;
 	}
 }

@@ -3,6 +3,7 @@ using AsynCLAudio.OpenCl;
 using NAudio.CoreAudioApi;
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
+using System.Threading.Tasks;
 using Timer = System.Threading.Timer;
 
 namespace AsynCLAudio.Forms
@@ -607,6 +608,8 @@ namespace AsynCLAudio.Forms
 
 
 
+
+
 		// ----- Events ----- \\
 		private async void button_import_Click(object sender, EventArgs e)
 		{
@@ -712,11 +715,6 @@ namespace AsynCLAudio.Forms
 				await this.SelectedTrack.Play(this.playbackCancellationToken.Value, null, this.Volume);
 				this.button_playback.Text = "■";
 				this.Log("Playback started ▶", this.SelectedTrack.Name);
-
-				if (this.recording)
-				{
-					AudioRecorder.GetActivePlaybackDevice();
-				}
 			}
 		}
 
@@ -942,7 +940,28 @@ namespace AsynCLAudio.Forms
 			}
 		}
 
-		private void button_record_Click(object sender, EventArgs e)
+		private async void button_level_Click(object sender, EventArgs e)
+		{
+			if (this.SelectedTrack == null)
+			{
+				this.Log("Level error", "Please select a track to adjust level", true);
+				return;
+			}
+
+			float level = 0.8f;
+			float amplitude = 1.0f;
+
+			this.Log("Started adjusting level", $"Level: {level}, Amplitude: {amplitude}", true);
+
+			await this.SelectedTrack.Level(level, amplitude);
+
+			this.Log("Successfully adjusted level", this.SelectedTrack.Name);
+
+			// Update info
+			this.UpdateInfoView();
+		}
+
+		private async void button_record_Click(object sender, EventArgs e)
 		{
 			string outDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyMusic), "AsynCLAudio", "Recorded");
 			if (!Directory.Exists(outDir))
@@ -965,10 +984,23 @@ namespace AsynCLAudio.Forms
 				this.recordingTimer.Start();
 
 				MMDevice? selectedDevice = this.comboBox_captureDevices.SelectedItem as MMDevice;
-				AudioRecorder.StartRecording(fileName, selectedDevice);
+				this.comboBox_captureDevices.Enabled = false;
+
+				await Task.Run(() =>
+				{
+					// Start recording
+					AudioRecorder.StartRecording(fileName, selectedDevice);
+				});
 			}
 			else
 			{
+				// Require CTRL down to stop recording
+				if ((ModifierKeys & Keys.Control) != Keys.Control)
+				{
+					this.Log("Recording stop info", "Please CTRL-click to stop recording!");
+					return;
+				}
+
 				this.button_record.ForeColor = Color.Black;
 				this.Log("Stopped recording.", (DateTime.Now - this.recordingTime).ToString("hh\\:mm\\:ss\\.fff"));
 
@@ -977,7 +1009,12 @@ namespace AsynCLAudio.Forms
 
 				this.textBox_recording.ForeColor = Color.Black;
 
-				AudioRecorder.StopRecording();
+				await Task.Run(() =>
+				{
+					// Stop recording
+					AudioRecorder.StopRecording();
+				});
+
 				this.comboBox_captureDevices.Enabled = true;
 			}
 
@@ -1163,6 +1200,8 @@ namespace AsynCLAudio.Forms
 				this.audioCollection.BackColor = colorDialog.Color;
 				this.Log("Background color changed", this.BackColor.ToString());
 
+				this.button_backColor.BackColor = this.audioCollection.BackColor;
+
 				await this.UpdateWaveform();
 			}
 		}
@@ -1195,5 +1234,7 @@ namespace AsynCLAudio.Forms
 
 			await this.UpdateWaveform();
 		}
+
+		
 	}
 }

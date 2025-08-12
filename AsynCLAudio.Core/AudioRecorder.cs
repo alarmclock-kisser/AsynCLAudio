@@ -9,6 +9,8 @@ public static class AudioRecorder
 {
 	private static WasapiLoopbackCapture? _capture;
 	private static MMDevice? _mmDevice;
+	public static string CaptureDeviceName => _capture?.WaveFormat.Encoding.ToString() ?? "N/A";
+	public static string MMDeviceName => _mmDevice?.FriendlyName ?? "N/A";
 	private static WaveFileWriter? _writer;
 
 	public static bool IsRecording { get; private set; } = false;
@@ -89,6 +91,8 @@ public static class AudioRecorder
 			Console.WriteLine("Keine Aufnahme aktiv.");
 			return;
 		}
+
+		IsRecording = false;
 
 		Console.WriteLine("Aufnahme wird gestoppt...");
 		_capture?.StopRecording();

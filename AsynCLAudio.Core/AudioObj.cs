@@ -744,6 +744,46 @@ namespace AsynCLAudio.Core
 			}).ConfigureAwait(false);
 		}
 
+		public async Task Level(float targetLevel = 0.8f, float maxAmplitude = 1.0f, int maxWorkers = -2)
+		{
+			if (this.Data == null || this.Data.Length == 0)
+			{
+				return;
+			}
+
+			// Normalize target level
+			targetLevel = Math.Clamp(targetLevel, 0.0f, maxAmplitude);
+			
+			// Phase 1: Find maximum amplitude (parallel + async)
+			float maxAmplitudeValue = await Task.Run(() =>
+			{
+				float max = 0f;
+				Parallel.For(0, this.Data.Length,
+					() => 0f,
+					(i, _, localMax) => Math.Max(Math.Abs(this.Data[i]), localMax),
+					localMax => { lock (this) { max = Math.Max(max, localMax); } }
+				);
+				return max;
+			}).ConfigureAwait(false);
+			if (maxAmplitudeValue == 0f)
+			{
+				return;
+			}
+			
+			// Phase 2: Calculate scaling factor
+			float scaleFactor = targetLevel / maxAmplitudeValue;
+			
+			// Phase 3: Apply scaling (parallel + async)
+			await Task.Run(() =>
+			{
+				int workerCount = CommonStatics.AdjustWorkersCount(maxWorkers);
+				Parallel.For(0, this.Data.Length, new ParallelOptions { MaxDegreeOfParallelism = workerCount }, i =>
+				{
+					this.Data[i] *= scaleFactor;
+				});
+			}).ConfigureAwait(false);
+		}
+
 		public async Task<Image<Rgba32>> GetWaveformImageAsync(float[]? data, int width = 720, int height = 480,
 			int samplesPerPixel = 128, float amplifier = 1.0f, long offset = 0,
 			SixLabors.ImageSharp.Color? graphColor = null, SixLabors.ImageSharp.Color? backgroundColor = null, bool smoothEdges = true, int workerCount = -2)
