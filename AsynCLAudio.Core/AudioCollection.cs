@@ -11,9 +11,9 @@ namespace AsynCLAudio.Core
 	public class AudioCollection
 	{
 		private ConcurrentDictionary<Guid, AudioObj> tracks = [];
-		public IReadOnlyList<AudioObj> Tracks => this.tracks.Values.ToList();
+		public IReadOnlyList<AudioObj> Tracks => this.tracks.Values.OrderBy(t => t.CreatedAt).ToList();
 		public int Count => this.Tracks.Count;
-		public string[] Entries => this.tracks.Values.Select(t => t.Name).ToArray();
+		public string[] Entries => this.Tracks.Select(t => t.Name).ToArray();
 		public string[] Playing => this.tracks.Values.Where(t => t.Playing).Select(t => t.Name).ToArray();
 
 		public Color GraphColor { get; set; } = Color.BlueViolet;
@@ -70,8 +70,13 @@ namespace AsynCLAudio.Core
 			return obj;
 		}
 
-		public async Task RemoveAsync(AudioObj obj)
+		public async Task RemoveAsync(AudioObj? obj)
 		{
+			if (obj == null)
+			{
+				return;
+			}
+
 			// Remove from tracks + Dispose obj
 			await Task.Run(() =>
 			{

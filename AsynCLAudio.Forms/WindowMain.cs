@@ -16,7 +16,7 @@ namespace AsynCLAudio.Forms
 
 		private bool disposing = false;
 
-		public AudioObj? SelectedTrack => this.audioCollection.Tracks.FirstOrDefault(t => t.Name.Contains(this.listBox_tracks.SelectedItem?.ToString() ?? "???"));
+		public AudioObj? SelectedTrack => this.audioCollection[(this.GetSelectedTrackItemSafe()?.ToString() ?? "???")];
 
 		private bool isProcessing = false;
 		private Dictionary<NumericUpDown, long> previousNumericValues = [];
@@ -30,6 +30,8 @@ namespace AsynCLAudio.Forms
 		private System.Timers.Timer recordingTimer = new(120);
 		private DateTime recordingTime = DateTime.Now;
 
+		private float estimatedBeatDuration => this.SelectedTrack != null ? (float) (60.0 / this.SelectedTrack.Bpm) : 1.0f;
+
 		public string masterVolume => "Master" + Environment.NewLine + ((int) (100 - this.vScrollBar_masterVolume.Value)).ToString() + "%";
 		public string trackVolume => "Track" + Environment.NewLine + ((int) (100 - this.vScrollBar_trackVolume.Value)).ToString() + "%";
 
@@ -42,6 +44,8 @@ namespace AsynCLAudio.Forms
 
 
 			this.UpdateGraphColorButton();
+
+			this.BuildLoopButtons();
 
 			// Event for right-click on entry -> remove context menu (selected track)
 			this.SetupContextMenuForListBox();
@@ -99,7 +103,7 @@ namespace AsynCLAudio.Forms
 				if (this.recordingTimer != null)
 				{
 					this.recordingTimer.Stop();
-					this.recordingTimer.Elapsed -= RecordingTimer_Elapsed;
+					this.recordingTimer.Elapsed -= this.RecordingTimer_Elapsed;
 					this.recordingTimer.Dispose();
 				}
 				if (this.components != null)
@@ -162,6 +166,18 @@ namespace AsynCLAudio.Forms
 			this.Dispose();
 		}
 
+		private object? GetSelectedTrackItemSafe()
+		{
+			if (this.listBox_tracks.InvokeRequired)
+			{
+				return this.listBox_tracks.Invoke(new Func<object?>(() => this.listBox_tracks.SelectedItem));
+			}
+			else
+			{
+				return this.listBox_tracks.SelectedItem;
+			}
+		}
+
 		public void Log(string message = "", string inner = "", bool messageBox = false)
 		{
 			string timeStamp = DateTime.Now.ToString("HH:mm:ss.fff");
@@ -181,6 +197,102 @@ namespace AsynCLAudio.Forms
 			{
 				MessageBox.Show(message, $"Log [{timeStamp}]", MessageBoxButtons.OK, MessageBoxIcon.Information);
 			}
+		}
+
+		private void BuildLoopButtons()
+		{
+			this.panel_loop.Controls.Clear();
+			int[] tags = [-16, -8, -4, -2, -1, 1, 2, 4, 8, 16];
+
+			int buttonSize = this.panel_loop.Height - 2;
+			if ((buttonSize + 2) * 10 > this.panel_loop.Width)
+			{
+				buttonSize = ((this.panel_loop.Width - 2) / 10) - 2;
+			}
+			float fontSize = 0.20f * (float) buttonSize;
+
+			// Build 10 square (23x23) buttons for loop control (-16, -8, -4, -2, -1, +1, +2, +4, +8, +16)
+			for (int i = 0; i < tags.Length; i++)
+			{
+				Button button = new()
+				{
+					Name = $"button_loop_{tags[i].ToString()}",
+					Text = tags[i].ToString(),
+					Font = new Font("Consolas", fontSize, FontStyle.Bold),
+					Size = new Size(buttonSize, buttonSize),
+					Tag = tags[i]
+				};
+				button.Click += this.ButtonLoop_Click;
+				button.MouseEnter += async (sender, e) =>
+				{
+					if (this.SelectedTrack == null)
+					{
+						this.label_info_beatDuration.Text = "No beat duration available";
+						return;
+					}
+
+					// While mouse is over the button, show tooltip with estimated beat duration
+					await this.UpdateBeatDurationLabel(button);
+				};
+				this.panel_loop.Controls.Add(button);
+				button.Location = new Point(((this.panel_loop.Width / 10 - buttonSize) / 2) + (i) * (buttonSize + 2), (this.panel_loop.Height - buttonSize) / 2);
+			}
+		}
+
+		private async void ButtonLoop_Click(object? sender, EventArgs e)
+		{
+			if (sender is Button button && button.Tag is int loopValue)
+			{
+				if (this.SelectedTrack != null)
+				{
+					await this.SelectedTrack.Loop(loopValue);
+					this.Log($"Looped track: {loopValue} beats", this.SelectedTrack?.Name ?? "N/A");
+				}
+				else
+				{
+					this.Log("No track selected for loop control", "Error");
+				}
+			}
+		}
+
+		private async Task UpdateBeatDurationLabel(Button button)
+		{
+			// Invoke if necessary
+			if (this.disposing || this.IsDisposed || !this.IsHandleCreated)
+			{
+				return;
+			}
+
+			while (this.panel_loop.ClientRectangle.Contains(this.panel_loop.PointToClient(Cursor.Position)))
+			{
+				await Task.Run(() =>
+				{
+					try
+					{
+						this.Invoke((Action) (() =>
+						{
+							this.label_info_beatDuration.Text = $"{button.Tag} beat {(Math.Abs((int) (button.Tag ?? 0)) > 1 ? "s" : " ")} ≈ {(int) (button.Tag ?? 0) * this.estimatedBeatDuration:F3} sec.";
+						}));
+						Application.DoEvents();
+						System.Threading.Thread.Sleep(20);
+					}
+					catch (Exception ex)
+					{
+						Console.WriteLine(ex);
+					}
+				});
+
+				if (!this.panel_loop.ClientRectangle.Contains(this.panel_loop.PointToClient(Cursor.Position)))
+				{
+					// If mouse is not over the button anymore, hide tooltip
+					break;
+				}
+			}
+
+			this.Invoke((Action) (() =>
+			{
+				this.label_info_beatDuration.Text = $"1 beat  ≈ {this.estimatedBeatDuration:F3} sec.";
+			}));
 		}
 
 		private void listBox_log_DoubleClick(Object? sender, EventArgs e)
@@ -297,6 +409,10 @@ namespace AsynCLAudio.Forms
 				this.numericUpDown_samplesPerPixel.Enabled = false;
 				return;
 			}
+			else if (track.Playing)
+			{
+				this.playbackTimer.Start();
+			}
 
 			// Fill time stretch kernels
 			this.FillStretchKernelsComboBox();
@@ -319,6 +435,9 @@ namespace AsynCLAudio.Forms
 			{
 				track.UpdateBpm(track.Bpm / 100f);
 			}
+
+			
+			this.label_info_beatDuration.Text = $"1 beat ≈  {this.estimatedBeatDuration:F3} sec.";
 
 			this.numericUpDown_initialBpm.Value = (decimal) Math.Max((float) this.numericUpDown_initialBpm.Minimum, (float) (track.Bpm));
 
@@ -369,9 +488,6 @@ namespace AsynCLAudio.Forms
 					this.pictureBox_waveform.Image.Dispose();
 					this.pictureBox_waveform.Image = null;
 				}
-
-				this.playbackTimer.Stop();
-				return;
 			}
 			else if (this.SelectedTrack.Playing)
 			{
@@ -395,6 +511,17 @@ namespace AsynCLAudio.Forms
 			if (this.checkBox_hueGraph.Checked)
 			{
 				this.GetHueShiftedColor();
+			}
+
+			if (this.SelectedTrack == null)
+			{
+				// No track selected, clear waveform
+				if (this.pictureBox_waveform.Image != null)
+				{
+					this.pictureBox_waveform.Image.Dispose();
+					this.pictureBox_waveform.Image = null;
+				}
+				return;
 			}
 
 			// Update image + GC (previous disposed & not set image)
@@ -603,10 +730,13 @@ namespace AsynCLAudio.Forms
 		{
 			string kernelName = this.comboBox_stretchKernels.SelectedItem?.ToString() ?? string.Empty;
 
-			// Unselect track to prevent operations on it while processing + disable listbox
-			int selectedIndex = this.listBox_tracks.SelectedIndex;
-			this.listBox_tracks.SelectedIndex = -1;
-			this.listBox_tracks.Enabled = false;
+			// Create output directory if not exists
+			string outputDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyMusic), "AsynCLAudio", "Output");
+			if (!Directory.Exists(outputDir) || this.checkBox_autoExport.Checked == false)
+			{
+				Directory.CreateDirectory(outputDir);
+				this.Log("Created output directory", outputDir);
+			}
 
 			ConcurrentBag<AudioObj> selectedTracks = [];
 
@@ -620,6 +750,17 @@ namespace AsynCLAudio.Forms
 
 				// Add track to bag
 				selectedTracks.Add(track);
+				
+
+				// Skip if bpm is same or matches (*2 or /2)
+				if (track.Bpm == (float) this.numericUpDown_targetBpm.Value ||
+					Math.Abs(track.Bpm - (float) this.numericUpDown_targetBpm.Value) < 0.01 ||
+					Math.Abs(track.Bpm - (float) this.numericUpDown_targetBpm.Value * 2) < 0.01 ||
+					Math.Abs(track.Bpm - (float) this.numericUpDown_targetBpm.Value / 2) < 0.01)
+				{
+					this.Log($"Skipping '{track.Name}' ({track.Bpm} BPM), already matches target BPM", "No processing needed");
+					continue;
+				}
 
 				double factor = (double) (track.Bpm / (double) this.numericUpDown_targetBpm.Value);
 				int chunkSize = (int) this.numericUpDown_chunkSize.Value;
@@ -667,33 +808,9 @@ namespace AsynCLAudio.Forms
 				{
 					this.progressBar_processing.Value = 0;
 				}
-			}
 
-			// Re-enable listbox + select previous track
-			this.listBox_tracks.Enabled = true;
-			if (selectedIndex >= 0 && selectedIndex < this.listBox_tracks.Items.Count)
-			{
-				this.listBox_tracks.SelectedIndex = selectedIndex;
-			}
-
-			// Log total processed tracks + time
-			int count = selectedTracks.Count;
-			long totalTime = (long) selectedTracks.Sum(t => t.ElapsedProcessingTime);
-			double totalSeconds = totalTime / 1000.0;
-			this.Log($"Total processed tracks: {count}, Total processing time: {totalSeconds:F1} seconds");
-
-			// Optionally: Export all processed tracks
-			if (this.checkBox_autoExport.Checked)
-			{
-				// Create output directory if not exists
-				string outputDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyMusic), "AsynCLAudio", "Output");
-				if (!Directory.Exists(outputDir))
-				{
-					Directory.CreateDirectory(outputDir);
-					this.Log("Created output directory", outputDir);
-				}
-
-				foreach (var track in selectedTracks)
+				// Optionally: Export all processed tracks
+				if (this.checkBox_autoExport.Checked)
 				{
 					try
 					{
@@ -708,8 +825,17 @@ namespace AsynCLAudio.Forms
 				}
 			}
 
+			// Log total processed tracks + time
+			int count = selectedTracks.Count;
+			long totalTime = (long) selectedTracks.Sum(t => t.ElapsedProcessingTime);
+			double totalSeconds = totalTime / 1000.0;
+			this.Log($"Total processed tracks: {count}, Total processing time: {totalSeconds:F1} seconds");
+
 			// Play windows complement sound
-			System.Media.SystemSounds.Asterisk.Play();
+			if (!AudioRecorder.IsRecording)
+			{
+				System.Media.SystemSounds.Asterisk.Play();
+			}
 		}
 
 
@@ -751,6 +877,12 @@ namespace AsynCLAudio.Forms
 
 				// Fill tracks
 				this.FillTracksListBox();
+
+				// If first track, set as selected
+				if (this.audioCollection.Tracks.Count == 1)
+				{
+					this.listBox_tracks.SelectedIndex = 0; // Select first added track
+				}
 
 				this.Log("Successfully imported track(s)", ofd.FileNames.Length.ToString());
 			}
@@ -841,9 +973,10 @@ namespace AsynCLAudio.Forms
 				return;
 			}
 
+			string name = this.SelectedTrack.Name.Replace("▶ ", string.Empty).Trim();
+
 			if (this.SelectedTrack.Playing)
 			{
-				string name = this.SelectedTrack.Name.Replace("▶ ", string.Empty).Trim();
 				this.playbackTimer.Stop();
 				this.SelectedTrack.Stop();
 				this.playbackTimer.Elapsed -= (sender, e) => this.UpdateWaveform().Wait();
@@ -865,7 +998,7 @@ namespace AsynCLAudio.Forms
 				await this.SelectedTrack.Play(this.playbackCancellationToken.Value, null, this.Volume);
 				this.button_playback.Text = "■";
 
-				this.Log("Playback started ▶", this.SelectedTrack.Name);
+				this.Log("Playback started ▶", name);
 			}
 
 			this.FillTracksListBox();
@@ -948,7 +1081,6 @@ namespace AsynCLAudio.Forms
 			// Unselect track to prevent operations on it while processing + disable listbox
 			int selectedIndex = this.listBox_tracks.SelectedIndex;
 			this.listBox_tracks.SelectedIndex = -1;
-			this.listBox_tracks.Enabled = false;
 
 			double factor = (double) this.numericUpDown_stretchFactor.Value;
 			int chunkSize = (int) this.numericUpDown_chunkSize.Value;
@@ -1007,7 +1139,6 @@ namespace AsynCLAudio.Forms
 			}
 
 			// Re-enable listbox + select previous track
-			this.listBox_tracks.Enabled = true;
 			if (selectedIndex >= 0 && selectedIndex < this.listBox_tracks.Items.Count)
 			{
 				this.listBox_tracks.SelectedIndex = selectedIndex;
@@ -1211,11 +1342,14 @@ namespace AsynCLAudio.Forms
 			{
 				if (this.SelectedTrack.Paused)
 				{
+					// Restart playback timer
+					this.playbackTimer.Start();
 					this.button_pause.Text = "||";
 					this.Log("Playback paused ||", this.SelectedTrack.Name.Replace("▶ ", ""));
 				}
 				else
 				{
+					this.playbackTimer.Stop();
 					this.button_pause.Text = "▶";
 					this.Log("Playback resumed ▶", this.SelectedTrack.Name.Replace("▶ ", ""));
 				}

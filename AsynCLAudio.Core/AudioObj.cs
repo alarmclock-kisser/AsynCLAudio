@@ -20,6 +20,7 @@ namespace AsynCLAudio.Core
 	public class AudioObj : IDisposable
 	{
 		public Guid Id { get; private set; } = Guid.Empty;
+		public DateTime CreatedAt { get; private set; } = DateTime.Now;
 		public string FilePath { get; set; } = string.Empty;
 		public string Name => ((this.player.PlaybackState == PlaybackState.Playing || this.player.PlaybackState == PlaybackState.Paused) ? "▶ " : "") + Path.GetFileNameWithoutExtension(this.FilePath);
 
@@ -54,10 +55,14 @@ namespace AsynCLAudio.Core
 
 		public int Volume { get; set; } = 100;
 		private WaveOutEvent player;
+		private WaveStream? waveStream;
+		public object playerLock = new object();
+
 		public bool PlayerPlaying => this.player != null && this.player.PlaybackState == PlaybackState.Playing;
 		public bool Playing = false;
 		public bool Paused = false;
-		private long position => this.player == null || this.player.PlaybackState == PlaybackState.Stopped ? 0 : this.player.GetPosition() / (this.Channels * (this.BitDepth / 8));
+		// Get position from waveStream
+		private long position => this.waveStream?.Position / sizeof(float) ?? 0;
 		private double positionSeconds => this.SampleRate <= 0 ? 0 : (double) this.position / this.SampleRate;
 		public TimeSpan CurrentTime => TimeSpan.FromSeconds(this.positionSeconds);
 
@@ -88,6 +93,9 @@ namespace AsynCLAudio.Core
 
 		public void Dispose()
 		{
+			this.player?.Stop();
+			this.Playing = false;
+
 			this.Data = [];
 
 			GC.SuppressFinalize(this);
@@ -650,6 +658,8 @@ namespace AsynCLAudio.Core
 				this.waveformUpdateTimer.Stop();
 				this.player?.Stop();
 				this.player?.Dispose();
+				this.waveStream?.Dispose();
+				this.waveStream = null;
 				this.Paused = false;
 			}
 			else
@@ -703,6 +713,7 @@ namespace AsynCLAudio.Core
 				}))
 				{
 					// Start playback in background
+					this.waveStream = audioStream;
 					this.player.Init(audioStream);
 					// this.waveformUpdateTimer.Start();
 
@@ -1244,6 +1255,71 @@ namespace AsynCLAudio.Core
 			return this.Name;
 		}
 
+		public async Task Loop(int beats = 0)
+		{
+			if (beats == 0 || this.player == null)
+				return;
 
+			// Validate and clamp BPM
+			float bpm = Math.Max(this.Bpm, 60.0f);
+
+			// Calculate samples per beat (for all channels)
+			int samplesPerBeat = (int) Math.Round((this.SampleRate * this.Channels) / (bpm / 60.0f));
+			samplesPerBeat = Math.Max(samplesPerBeat, 1);  // Ensure at least 1 sample
+
+			// Calculate the skip delta in samples
+			int skipDelta = samplesPerBeat * beats;
+
+			await Task.Run(() =>
+			{
+				if (this.player.PlaybackState == PlaybackState.Stopped)
+					return;
+
+				// Current position in bytes
+				long currentPos = this.player.GetPosition();
+
+				// Convert to sample index (position in float array)
+				int currentSample = (int) (currentPos / sizeof(float));
+
+				// Calculate new sample position
+				int newSample = currentSample + skipDelta;
+
+				// Handle wrap-around
+				if (newSample < 0)
+				{
+					// Skip to end when going negative
+					newSample = 0;
+				}
+				else if (newSample >= this.Data.Length)
+				{
+					// Skip to start when exceeding length
+					newSample = this.Data.Length - 1;
+				}
+
+				// Set new position in bytes
+				this.SetCurrentPosition(newSample);
+
+			}).ConfigureAwait(false);
+		}
+
+		public void SetCurrentPosition(int samplePosition)
+		{
+			if (this.player != null && this.waveStream != null)
+			{
+				lock (this.playerLock) // Thread-Sicherheit
+				{
+					// Position in Bytes setzen
+					this.waveStream.Position = samplePosition * sizeof(float);
+
+					// Bei WaveOut muss Play() neu aufgerufen werden
+					if (this.player.PlaybackState == PlaybackState.Playing)
+					{
+						//this.player.Stop();
+						//this.player.Init(this.waveStream);
+						//this.player.Play();
+					}
+				}
+			}
+		}
 	}
 }

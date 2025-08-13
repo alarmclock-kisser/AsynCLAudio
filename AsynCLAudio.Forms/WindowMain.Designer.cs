@@ -73,6 +73,8 @@ namespace AsynCLAudio.Forms
 			this.label_info_trackVolume = new Label();
 			this.label_info_masterVolume = new Label();
 			this.windowMainBindingSource = new BindingSource(this.components);
+			this.panel_loop = new Panel();
+			this.label_info_beatDuration = new Label();
 			((System.ComponentModel.ISupportInitialize) this.pictureBox_waveform).BeginInit();
 			((System.ComponentModel.ISupportInitialize) this.audioCollectionBindingSource).BeginInit();
 			((System.ComponentModel.ISupportInitialize) this.numericUpDown_chunkSize).BeginInit();
@@ -588,12 +590,31 @@ namespace AsynCLAudio.Forms
 			// 
 			this.windowMainBindingSource.DataSource = typeof(WindowMain);
 			// 
+			// panel_loop
+			// 
+			this.panel_loop.BackColor = SystemColors.Control;
+			this.panel_loop.Location = new Point(11, 675);
+			this.panel_loop.Name = "panel_loop";
+			this.panel_loop.Size = new Size(372, 45);
+			this.panel_loop.TabIndex = 51;
+			// 
+			// label_info_beatDuration
+			// 
+			this.label_info_beatDuration.AutoSize = true;
+			this.label_info_beatDuration.Location = new Point(11, 723);
+			this.label_info_beatDuration.Name = "label_info_beatDuration";
+			this.label_info_beatDuration.Size = new Size(146, 15);
+			this.label_info_beatDuration.TabIndex = 52;
+			this.label_info_beatDuration.Text = "No beat duration available";
+			// 
 			// WindowMain
 			// 
 			this.AutoScaleDimensions = new SizeF(7F, 15F);
 			this.AutoScaleMode = AutoScaleMode.Font;
 			this.BackColor = SystemColors.ControlLight;
-			this.ClientSize = new Size(704, 681);
+			this.ClientSize = new Size(704, 801);
+			this.Controls.Add(this.label_info_beatDuration);
+			this.Controls.Add(this.panel_loop);
 			this.Controls.Add(this.label_info_masterVolume);
 			this.Controls.Add(this.label_info_trackVolume);
 			this.Controls.Add(this.vScrollBar_masterVolume);
@@ -644,8 +665,8 @@ namespace AsynCLAudio.Forms
 			this.Controls.Add(this.listBox_tracks);
 			this.Controls.Add(this.pictureBox_waveform);
 			this.MaximizeBox = false;
-			this.MaximumSize = new Size(720, 720);
-			this.MinimumSize = new Size(720, 720);
+			this.MaximumSize = new Size(720, 840);
+			this.MinimumSize = new Size(720, 840);
 			this.Name = "WindowMain";
 			this.Text = "AsynCLAudio (Forms)";
 			((System.ComponentModel.ISupportInitialize) this.pictureBox_waveform).EndInit();
@@ -719,5 +740,7 @@ namespace AsynCLAudio.Forms
 		private Label label_info_trackVolume;
 		private Label label_info_masterVolume;
 		private BindingSource windowMainBindingSource;
+		private Panel panel_loop;
+		private Label label_info_beatDuration;
 	}
 }
