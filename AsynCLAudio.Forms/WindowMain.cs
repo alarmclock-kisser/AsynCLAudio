@@ -1,6 +1,7 @@
 ﻿using AsynCLAudio.Core;
 using AsynCLAudio.OpenCl;
 using NAudio.CoreAudioApi;
+using SixLabors.ImageSharp.Formats.Tiff;
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
@@ -15,19 +16,22 @@ namespace AsynCLAudio.Forms
 
 		private bool disposing = false;
 
-		public AudioObj? SelectedTrack => this.audioCollection[this.listBox_tracks.SelectedItem?.ToString() ?? string.Empty];
+		public AudioObj? SelectedTrack => this.audioCollection.Tracks.FirstOrDefault(t => t.Name.Contains(this.listBox_tracks.SelectedItem?.ToString() ?? "???"));
 
 		private bool isProcessing = false;
 		private Dictionary<NumericUpDown, long> previousNumericValues = [];
 
 		private CancellationToken? playbackCancellationToken;
-		private float Volume => 1.0f - this.vScrollBar_volume.Value / 100f;
+		private float Volume => 1.0f - this.vScrollBar_trackVolume.Value / 100f;
 		private System.Timers.Timer playbackTimer = new(50);
 		private Color graphHue = Color.Red;
 
 		private bool recording = false;
 		private System.Timers.Timer recordingTimer = new(120);
 		private DateTime recordingTime = DateTime.Now;
+
+		public string masterVolume => "Master" + Environment.NewLine + ((int) (100 - this.vScrollBar_masterVolume.Value)).ToString() + "%";
+		public string trackVolume => "Track" + Environment.NewLine + ((int) (100 - this.vScrollBar_trackVolume.Value)).ToString() + "%";
 
 		public WindowMain(AudioCollection audioCollection, OpenClService openClService)
 		{
@@ -45,6 +49,9 @@ namespace AsynCLAudio.Forms
 			this.listBox_tracks.SelectedIndexChanged += (sender, e) => this.UpdateInfoView();
 			this.recordingTimer.Elapsed += RecordingTimer_Elapsed;
 			this.listBox_log.DoubleClick += this.listBox_log_DoubleClick;
+			this.button_playback.MouseEnter += this.button_playback_MouseEnter;
+			this.vScrollBar_masterVolume.ValueChanged += (sender, e) => this.UpdateVolumeLabels();
+			this.vScrollBar_trackVolume.ValueChanged += (sender, e) => this.UpdateVolumeLabels();
 			this.FillDevicesComboBox(2);
 			this.comboBox_captureDevices.Items.AddRange(AudioRecorder.GetCaptureDevices());
 			var standardCaptureDevice = AudioRecorder.GetDefaultPlaybackDevice();
@@ -103,6 +110,55 @@ namespace AsynCLAudio.Forms
 			base.Dispose(disposing);
 		}
 
+		// Ersetze die Methode OnFormClosing, damit sie mit der Basisklasse übereinstimmt (Rückgabetyp void)
+		protected override void OnFormClosing(FormClosingEventArgs e)
+		{
+			base.OnFormClosing(e);
+			if (this.disposing || this.IsDisposed)
+			{
+				return;
+			}
+
+			// Stop recording if running
+			if (this.recording)
+			{
+				AudioRecorder.StopRecording();
+				this.recording = false;
+				this.recordingTimer.Stop();
+
+				/*if (!string.IsNullOrEmpty(AudioRecorder.RecordedFile))
+				{
+					this.Log("Recording stopped", AudioRecorder.RecordedFile);
+					this.Log("Start leveling recorder audio file ...", AudioRecorder.RecordedFile);
+					
+					var leveledObj = AudioCollection.LevelAudioFileAsync(AudioRecorder.RecordedFile, 60, 1.0f).ContinueWith(task =>
+					{
+						if (task.IsCompletedSuccessfully)
+						{
+							this.Log("Recorder audio file leveled successfully", AudioRecorder.RecordedFile);
+						}
+						else
+						{
+							this.Log("Error leveling recorder audio file", task.Exception?.Message ?? "Unknown error");
+						}
+					});	
+				}*/
+
+			}
+
+			// Stop playback if running
+			if (this.SelectedTrack != null && this.SelectedTrack.Playing)
+			{
+				string name = this.SelectedTrack.Name;
+				this.SelectedTrack.Stop();
+				this.playbackTimer.Stop();
+				this.button_playback.Text = "▶";
+				this.Log("Playback stopped ■", name);
+			}
+
+			this.Dispose();
+		}
+
 		public void Log(string message = "", string inner = "", bool messageBox = false)
 		{
 			string timeStamp = DateTime.Now.ToString("HH:mm:ss.fff");
@@ -156,26 +212,32 @@ namespace AsynCLAudio.Forms
 
 		private void FillTracksListBox(bool keepSelection = true)
 		{
+			// Temporär Event-Handler entfernen
+			this.listBox_tracks.SelectedValueChanged -= this.ListBoxTracks_SelectedValueChanged;
+
+			// Aktuellen Selection-Index merken
 			int selectedIndex = this.listBox_tracks.SelectedIndex;
-			this.listBox_tracks.SelectedValueChanged -= (sender, e) => this.UpdateInfoView();
-			this.listBox_tracks.Items.Clear();
 
-			foreach (var audio in this.audioCollection.Tracks)
-			{
-				this.listBox_tracks.Items.Add(audio.Name);
-			}
+			// Data Binding korrekt einrichten
+			this.listBox_tracks.DataSource = null; // Erst zurücksetzen
+			this.listBox_tracks.DisplayMember = "Name"; // Property die angezeigt werden soll
+			this.listBox_tracks.ValueMember = "Id"; // Optional: Wert-Property
+			this.listBox_tracks.DataSource = this.audioCollection.Entries;
 
+			// Alte Selection wiederherstellen falls gewünscht
 			if (keepSelection && selectedIndex >= 0 && selectedIndex < this.listBox_tracks.Items.Count)
 			{
 				this.listBox_tracks.SelectedIndex = selectedIndex;
-				this.UpdateInfoView();
-			}
-			else
-			{
-				this.listBox_tracks.SelectedIndex = -1;
 			}
 
-			this.listBox_tracks.SelectedIndexChanged += (sender, e) => this.UpdateInfoView();
+			// Event-Handler wieder anhängen
+			this.listBox_tracks.SelectedValueChanged += this.ListBoxTracks_SelectedValueChanged;
+		}
+
+		// Separater Event-Handler (besser als Lambda)
+		private void ListBoxTracks_SelectedValueChanged(object? sender, EventArgs e)
+		{
+			this.UpdateInfoView();
 		}
 
 		private void FillStretchKernelsComboBox(string searchKey = "timestretch")
@@ -198,8 +260,8 @@ namespace AsynCLAudio.Forms
 
 		private void UpdateInfoView()
 		{
-			this.audioCollection.StopAll();
-			this.button_playback.Text = "▶";
+			this.button_playback.Text = this.SelectedTrack?.Playing == true ? "■" : "▶";
+
 			this.numericUpDown_chunkSize.Enabled = true;
 			this.numericUpDown_overlap.Enabled = true;
 			this.button_stretch.Enabled = true;
@@ -296,6 +358,17 @@ namespace AsynCLAudio.Forms
 				this.playbackTimer.Stop();
 				return;
 			}
+			else if (this.SelectedTrack.Playing)
+			{
+				// Update time textBox
+				TimeSpan duration = this.SelectedTrack.CurrentTime;
+				this.textBox_time.Text = $"{duration.Hours:D1}:{duration.Minutes:D2}:{duration.Seconds:D2}.{duration.Milliseconds:D3}";
+			}
+			else
+			{
+				// Reset time textBox
+				this.textBox_time.ResetText();
+			}
 
 			// Get peak volume for selected mmDevice
 			MMDevice? selectedDevice = this.comboBox_captureDevices.SelectedItem as MMDevice;
@@ -309,7 +382,7 @@ namespace AsynCLAudio.Forms
 				this.GetHueShiftedColor();
 			}
 
-			// Dispose previous image
+			// Update image + GC (previous disposed & not set image)
 			this.pictureBox_waveform.Image = await this.SelectedTrack.GetWaveformImageSimpleAsync(null, this.pictureBox_waveform.Width, this.pictureBox_waveform.Height, (int) this.numericUpDown_samplesPerPixel.Value, graphColor: this.audioCollection.GraphColor, backgroundColor: this.audioCollection.BackColor);
 			this.pictureBox_waveform.Invalidate();
 			GC.Collect();
@@ -388,34 +461,53 @@ namespace AsynCLAudio.Forms
 
 		private void SetupContextMenuForListBox()
 		{
-			// Erstelle das Kontextmenü-Element
 			ContextMenuStrip contextMenu = new();
-
-			// Erstelle den Menüpunkt "Entfernen"
 			ToolStripMenuItem removeItem = new("Remove");
 
-			// Registriere das asynchrone Event für den Klick
 			removeItem.Click += async (sender, e) =>
 			{
-				// Prüfe, ob ein Track ausgewählt ist
 				if (this.SelectedTrack != null)
 				{
-					// Rufe die asynchrone Entfernen-Methode auf
 					await this.audioCollection.RemoveAsync(this.SelectedTrack);
-
-					// Optional: UI-Update, z.B. die ListBox aktualisieren
 					this.FillTracksListBox();
 					this.UpdateInfoView();
-					GC.Collect();
 				}
 			};
 
-			// Füge den Menüpunkt dem Kontextmenü hinzu
 			contextMenu.Items.Add(removeItem);
 
-			// Weise das Kontextmenü deiner ListBox zu
-			this.listBox_tracks.ContextMenuStrip = contextMenu;
+			// Diese Lösung behält das ContextMenuStrip bei
+			this.listBox_tracks.MouseDown += (sender, e) =>
+			{
+				if (e.Button == MouseButtons.Right)
+				{
+					int index = listBox_tracks.IndexFromPoint(e.Location);
+					if (index != ListBox.NoMatches)
+					{
+						listBox_tracks.SelectedIndex = index;
+						// Kurze Verzögerung für bessere UX
+						Task.Delay(50).ContinueWith(_ =>
+						{
+							listBox_tracks.Invoke((MethodInvoker) delegate {
+								Point center = new Point(Cursor.Position.X - 15, Cursor.Position.Y - 10);
+								contextMenu.Show(center);
+							});
+						}, TaskScheduler.FromCurrentSynchronizationContext());
+					}
+				}
+			};
 		}
+
+		// Method to register labels data binding (text) to a field
+		private async void UpdateVolumeLabels()
+		{
+			// Set initial values
+			this.label_info_masterVolume.Text = this.masterVolume;
+			this.label_info_trackVolume.Text = this.trackVolume;
+
+			await this.audioCollection.SetMasterVolume((int) (100 - this.vScrollBar_masterVolume.Value));
+		}
+
 
 		private async Task StretchAllParallel()
 		{
@@ -617,7 +709,8 @@ namespace AsynCLAudio.Forms
 			OpenFileDialog ofd = new()
 			{
 				Title = "Import Audio File(s)",
-				InitialDirectory = (this.audioCollection.Count > 0 ? Environment.GetFolderPath(Environment.SpecialFolder.MyMusic) : Environment.GetFolderPath(Environment.SpecialFolder.MyMusic) + "\\AsynCLAudio\\Input"),
+				InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.MyMusic),
+				RestoreDirectory = true,
 				Multiselect = true,
 				Filter = "Audio Files|*.mp3;*.wav;*.flac;",
 			};
@@ -691,8 +784,48 @@ namespace AsynCLAudio.Forms
 			}
 		}
 
+		// Event for when mouse is over the playback button: Set ForeColor to Red while mouse is over it, afterwards reset to default
+		private void button_playback_MouseEnter(object? sender, EventArgs e)
+		{
+			// While mouse is over the button, watch for CTRL key down, then set ForeColor to Red, else if mouse leaves, reset ForeColor to default
+			while (this.button_playback.ClientRectangle.Contains(this.button_playback.PointToClient(Cursor.Position)))
+			{
+				if ((ModifierKeys & Keys.Control) == Keys.Control)
+				{
+					this.button_playback.ForeColor = Color.Red;
+
+					this.label_info_playbackInfo.Text = "Stop all (!)";
+					this.label_info_playbackInfo.ForeColor = Color.Red;
+					this.label_info_playbackInfo.Visible = true;
+				}
+				else
+				{
+					this.button_playback.ForeColor = SystemColors.ControlText;
+					this.label_info_playbackInfo.ResetText();
+					this.label_info_playbackInfo.Visible = false;
+				}
+
+				Application.DoEvents();
+				System.Threading.Thread.Sleep(50);
+			}
+
+			// Reset ForeColor to default
+			this.button_playback.ForeColor = SystemColors.ControlText;
+			this.label_info_playbackInfo.ResetText();
+			this.label_info_playbackInfo.Visible = false;
+		}
+
 		private async void button_playback_Click(object sender, EventArgs e)
 		{
+			// If CTRL down stop all
+			if ((ModifierKeys & Keys.Control) == Keys.Control)
+			{
+				this.audioCollection.StopAll();
+				this.FillTracksListBox();
+				this.UpdateInfoView();
+				return;
+			}
+
 			// Check selected track
 			if (this.SelectedTrack == null)
 			{
@@ -701,11 +834,19 @@ namespace AsynCLAudio.Forms
 
 			if (this.SelectedTrack.Playing)
 			{
+				string name = this.SelectedTrack.Name.Replace("▶ ", string.Empty).Trim();
 				this.playbackTimer.Stop();
 				this.SelectedTrack.Stop();
 				this.button_playback.Text = "▶";
 				this.playbackTimer.Elapsed -= (sender, e) => this.UpdateWaveform().Wait();
-				this.Log("Playback stopped ■", this.SelectedTrack.Name);
+				this.Log("Playback stopped ■", name);
+
+				if (this.checkBox_removeAfterPlayback.Checked)
+				{
+					// Remove track from collection
+					this.Log("Removing track after playback", this.SelectedTrack.Name);
+					await this.audioCollection.RemoveAsync(this.SelectedTrack);
+				}
 			}
 			else
 			{
@@ -714,8 +855,12 @@ namespace AsynCLAudio.Forms
 				this.playbackCancellationToken = new();
 				await this.SelectedTrack.Play(this.playbackCancellationToken.Value, null, this.Volume);
 				this.button_playback.Text = "■";
+
 				this.Log("Playback started ▶", this.SelectedTrack.Name);
 			}
+
+			this.FillTracksListBox();
+			this.UpdateInfoView();
 		}
 
 		private void numericUpDown_initialBpm_ValueChanged(object sender, EventArgs e)
@@ -902,7 +1047,7 @@ namespace AsynCLAudio.Forms
 
 		private async void vScrollBar_volume_Scroll(object sender, ScrollEventArgs e)
 		{
-			int value = this.vScrollBar_volume.Value;
+			int value = this.vScrollBar_trackVolume.Value;
 			float volume = 1.0f - value / 100f;
 
 			if (this.SelectedTrack != null)
@@ -1235,6 +1380,41 @@ namespace AsynCLAudio.Forms
 			await this.UpdateWaveform();
 		}
 
-		
+		private void button_browse_Click(object sender, EventArgs e)
+		{
+			// New Windows Explorer Window at MyMusic\AsynCLAudio\
+			string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyMusic), "AsynCLAudio");
+			if (!Directory.Exists(path))
+			{
+				Directory.CreateDirectory(path);
+			}
+
+			try
+			{
+				System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+				{
+					FileName = path,
+					UseShellExecute = true
+				});
+			}
+			catch (Exception ex)
+			{
+				MessageBox.Show($"Error opening folder: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+			}
+		}
+
+		private void checkBox_removeAfterPlayback_CheckedChanged(object sender, EventArgs e)
+		{
+			if (this.checkBox_removeAfterPlayback.Checked)
+			{
+				this.checkBox_removeAfterPlayback.Text = "Tracks will be removed after playback.";
+				this.Log("Remove after playback enabled", "Tracks will be removed after playback");
+			}
+			else
+			{
+				this.checkBox_removeAfterPlayback.ResetText();
+				this.Log("Remove after playback disabled", "Tracks will not be removed after playback");
+			}
+		}
 	}
 }

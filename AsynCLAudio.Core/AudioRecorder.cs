@@ -14,6 +14,7 @@ public static class AudioRecorder
 	private static WaveFileWriter? _writer;
 
 	public static bool IsRecording { get; private set; } = false;
+	public static string? RecordedFile { get; private set; } = null;
 
 	public static float GetPeakVolume(MMDevice? useDevice = null)
 	{
@@ -53,6 +54,8 @@ public static class AudioRecorder
 			Console.WriteLine("Aufnahme läuft bereits.");
 			return;
 		}
+
+		RecordedFile = Path.GetFullPath(filePath);
 
 		try
 		{

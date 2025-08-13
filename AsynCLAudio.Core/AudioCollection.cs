@@ -12,7 +12,9 @@ namespace AsynCLAudio.Core
 	{
 		private ConcurrentDictionary<Guid, AudioObj> tracks = [];
 		public IReadOnlyList<AudioObj> Tracks => this.tracks.Values.ToList();
-		public int Count => this.tracks.Count;
+		public int Count => this.Tracks.Count;
+		public string[] Entries => this.tracks.Values.Select(t => t.Name).ToArray();
+		public string[] Playing => this.tracks.Values.Where(t => t.Playing).Select(t => t.Name).ToArray();
 
 		public Color GraphColor { get; set; } = Color.BlueViolet;
 		public Color BackColor { get; set; } = Color.White;
@@ -88,5 +90,40 @@ namespace AsynCLAudio.Core
 			}
 		}
 
+		public async Task SetMasterVolume(int percentage)
+		{
+			await Task.Run(() =>
+			{
+				// Set master volume for all tracks (LINQ to avoid blocking)
+				var tasks = this.tracks.Values.Select(t => Task.Run(() => t.SetVolume(percentage))).ToArray();
+				Task.WaitAll(tasks);
+			});
+		}
+
+		public async Task DisposeAsync()
+		{
+			await Task.Run(() =>
+			{
+				foreach (var track in this.tracks.Values)
+				{
+					track.Dispose();
+				}
+
+				this.tracks.Clear();
+			});
+		}
+
+		public static async Task<AudioObj?> LevelAudioFileAsync(string filePath, float duration = 1.0f, float normalize = 1.0f)
+		{
+			AudioObj? obj = await AudioObj.CreateAsync(filePath);
+			if (obj == null)
+			{
+				return null;
+			}
+
+			await obj.Level(duration, normalize);
+
+			return obj;
+		}
 	}
 }

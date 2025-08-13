@@ -21,7 +21,7 @@ namespace AsynCLAudio.Core
 	{
 		public Guid Id { get; private set; } = Guid.Empty;
 		public string FilePath { get; set; } = string.Empty;
-		public string Name => Path.GetFileNameWithoutExtension(this.FilePath);
+		public string Name => (this.Playing ? "▶ " : "") + Path.GetFileNameWithoutExtension(this.FilePath);
 
 		public float[] Data { get; private set; } = [];
 		private int originalSampleRate = 0;
@@ -602,6 +602,34 @@ namespace AsynCLAudio.Core
 			});
 		}
 
+		public async Task SetVolume(int volume = -1)
+		{
+			if (volume < 0)
+			{
+				volume = this.Volume;
+			}
+
+			// Invoke async
+			await Task.Run(() =>
+			{
+				if (this.player != null && this.player.PlaybackState == PlaybackState.Playing)
+				{
+					this.player.Volume = Math.Clamp((volume / 100), 0f, 1f);
+				}
+				else
+				{
+					this.Volume = (int) (Math.Clamp((volume / 100), 0f, 1f) * 100);
+				}
+			});
+		}
+
+		public async Task ApplyMasterVolume(int masterPercentage = 100)
+		{
+			this.Volume *= (masterPercentage / 100);
+
+			await this.SetVolume();
+		}
+
 		public async Task Play(CancellationToken cancellationToken, Action? onPlaybackStopped = null, float? initialVolume = null)
 		{
 			initialVolume ??= this.Volume / 100f;
@@ -744,44 +772,59 @@ namespace AsynCLAudio.Core
 			}).ConfigureAwait(false);
 		}
 
-		public async Task Level(float targetLevel = 0.8f, float maxAmplitude = 1.0f, int maxWorkers = -2)
+		public async Task Level(float duration = 1.0f, float average = 1.0f, int maxWorkers = -2)
 		{
+			// Validate input
+			duration = Math.Clamp(duration, 0.1f, 600.0f);
+			maxWorkers = CommonStatics.AdjustWorkersCount(maxWorkers);
+
 			if (this.Data == null || this.Data.Length == 0)
 			{
 				return;
 			}
 
-			// Normalize target level
-			targetLevel = Math.Clamp(targetLevel, 0.0f, maxAmplitude);
-			
-			// Phase 1: Find maximum amplitude (parallel + async)
-			float maxAmplitudeValue = await Task.Run(() =>
-			{
-				float max = 0f;
-				Parallel.For(0, this.Data.Length,
-					() => 0f,
-					(i, _, localMax) => Math.Max(Math.Abs(this.Data[i]), localMax),
-					localMax => { lock (this) { max = Math.Max(max, localMax); } }
-				);
-				return max;
-			}).ConfigureAwait(false);
-			if (maxAmplitudeValue == 0f)
+			// Calculate number of samples to process
+			int samplesPerSecond = (int) (this.SampleRate * this.Channels);
+			int totalSamples = (int) (duration * samplesPerSecond);
+			if (totalSamples <= 0 || totalSamples > this.Data.Length)
 			{
 				return;
 			}
-			
-			// Phase 2: Calculate scaling factor
-			float scaleFactor = targetLevel / maxAmplitudeValue;
-			
-			// Phase 3: Apply scaling (parallel + async)
+
+			// Calculate the average level over the specified duration
+			float averageLevel = average * await Task.Run(() =>
+			{
+				float sum = 0f;
+				int count = 0;
+				Parallel.For(0, totalSamples, new ParallelOptions { MaxDegreeOfParallelism = maxWorkers }, i =>
+				{
+					if (i < this.Data.Length)
+					{
+						sum += Math.Abs(this.Data[i]);
+						count++;
+					}
+				});
+				return count > 0 ? sum / count : 0f;
+			}).ConfigureAwait(false);
+			if (averageLevel <= 0f)
+			{
+				return;
+			}
+
+			// Within the specified duration, normalize the audio data to the average level
 			await Task.Run(() =>
 			{
-				int workerCount = CommonStatics.AdjustWorkersCount(maxWorkers);
-				Parallel.For(0, this.Data.Length, new ParallelOptions { MaxDegreeOfParallelism = workerCount }, i =>
+				Parallel.For(0, totalSamples, new ParallelOptions { MaxDegreeOfParallelism = maxWorkers }, i =>
 				{
-					this.Data[i] *= scaleFactor;
+					if (i < this.Data.Length)
+					{
+						this.Data[i] = (this.Data[i] / Math.Abs(this.Data[i])) * averageLevel;
+					}
 				});
 			}).ConfigureAwait(false);
+
+			// Optionally, normalize the entire audio data to ensure no clipping occurs
+			await this.Normalize(maxAmplitude: 1.0f).ConfigureAwait(false);
 		}
 
 		public async Task<Image<Rgba32>> GetWaveformImageAsync(float[]? data, int width = 720, int height = 480,
@@ -1049,8 +1092,14 @@ namespace AsynCLAudio.Core
 		}
 
 		// Export
-		public async Task<string?> Export(string outPath = "")
+		public async Task<string?> Export(string outPath = "", string? outFile = null)
 		{
+			if (File.Exists(outPath))
+			{
+				// If outPath is a file, use its directory
+				outPath = Path.GetDirectoryName(outFile) ?? string.Empty;
+			}
+
 			string baseFileName = $"{this.Name} [{this.Bpm:F1}]";
 
 			// Validate and prepare output directory
@@ -1148,6 +1197,11 @@ namespace AsynCLAudio.Core
 			{
 				Debug.WriteLine($"BPM tag writing failed: {ex.Message}");
 			}
+		}
+
+		public override string ToString()
+		{
+			return this.Name;
 		}
 
 
