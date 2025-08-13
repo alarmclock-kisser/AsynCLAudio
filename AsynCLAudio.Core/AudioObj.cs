@@ -21,7 +21,7 @@ namespace AsynCLAudio.Core
 	{
 		public Guid Id { get; private set; } = Guid.Empty;
 		public string FilePath { get; set; } = string.Empty;
-		public string Name => (this.Playing ? "▶ " : "") + Path.GetFileNameWithoutExtension(this.FilePath);
+		public string Name => ((this.player.PlaybackState == PlaybackState.Playing || this.player.PlaybackState == PlaybackState.Paused) ? "▶ " : "") + Path.GetFileNameWithoutExtension(this.FilePath);
 
 		public float[] Data { get; private set; } = [];
 		private int originalSampleRate = 0;
@@ -54,8 +54,10 @@ namespace AsynCLAudio.Core
 
 		public int Volume { get; set; } = 100;
 		private WaveOutEvent player;
-		public bool Playing => this.player?.PlaybackState == PlaybackState.Playing;
-		private long position => this.player == null || this.player.PlaybackState != PlaybackState.Playing ? 0 : this.player.GetPosition() / (this.Channels * (this.BitDepth / 8));
+		public bool PlayerPlaying => this.player != null && this.player.PlaybackState == PlaybackState.Playing;
+		public bool Playing = false;
+		public bool Paused = false;
+		private long position => this.player == null || this.player.PlaybackState == PlaybackState.Stopped ? 0 : this.player.GetPosition() / (this.Channels * (this.BitDepth / 8));
 		private double positionSeconds => this.SampleRate <= 0 ? 0 : (double) this.position / this.SampleRate;
 		public TimeSpan CurrentTime => TimeSpan.FromSeconds(this.positionSeconds);
 
@@ -588,6 +590,11 @@ namespace AsynCLAudio.Core
 		// Playback
 		public async Task SetVolume(float volume)
 		{
+			if (volume < 0)
+			{
+				volume = this.Volume;
+			}
+
 			// Invoke async
 			await Task.Run(() =>
 			{
@@ -625,19 +632,31 @@ namespace AsynCLAudio.Core
 
 		public async Task ApplyMasterVolume(int masterPercentage = 100)
 		{
-			this.Volume *= (masterPercentage / 100);
+			this.Volume = (int) ((float) this.Volume * masterPercentage / 100f);
 
 			await this.SetVolume();
 		}
 
 		public async Task Play(CancellationToken cancellationToken, Action? onPlaybackStopped = null, float? initialVolume = null)
 		{
+			this.Playing = true;
+
 			initialVolume ??= this.Volume / 100f;
 
-			// Stop any existing playback and cleanup
-			this.waveformUpdateTimer.Stop();
-			this.player?.Stop();
-			this.player?.Dispose();
+			// Stop any existing playback and cleanup if not paused
+			bool paused = false;
+			if (this.player != null && this.player.PlaybackState != PlaybackState.Paused)
+			{
+				this.waveformUpdateTimer.Stop();
+				this.player?.Stop();
+				this.player?.Dispose();
+				this.Paused = false;
+			}
+			else
+			{
+				paused = true;
+				this.Paused = false;
+			}
 
 			if (this.Data == null || this.Data.Length == 0)
 			{
@@ -669,6 +688,7 @@ namespace AsynCLAudio.Core
 					}
 					finally
 					{
+						this.Playing = false;
 						audioStream.Dispose();
 						memoryStream.Dispose();
 						this.player?.Dispose();
@@ -691,6 +711,12 @@ namespace AsynCLAudio.Core
 					{
 						try
 						{
+							// If paused, resume playback (set position)
+							if (paused)
+							{
+								// Set position to last known position
+							}
+
 							this.player.Play();
 							while (this.player.PlaybackState == PlaybackState.Playing)
 							{
@@ -725,10 +751,24 @@ namespace AsynCLAudio.Core
 
 		public async Task Pause()
 		{ 			
-			if (this.player != null && this.player.PlaybackState == PlaybackState.Playing)
+			if (this.player == null)
 			{
+				return;
+			}
+
+			if (this.player.PlaybackState == PlaybackState.Playing)
+			{
+				this.Playing = false;
+				this.Paused = true;
 				await Task.Run(() => this.player.Pause());
 			}
+			else if (this.player.PlaybackState == PlaybackState.Paused)
+			{
+				this.Playing = true;
+				this.Paused = false;
+				await Task.Run(() => this.player.Play());
+			}
+
 		}
 
 		public void Stop()

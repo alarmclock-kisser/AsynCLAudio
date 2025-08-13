@@ -308,7 +308,7 @@ namespace AsynCLAudio.Forms
 			this.vScrollBar_trackVolume.Name = "vScrollBar_trackVolume";
 			this.vScrollBar_trackVolume.Size = new Size(17, 135);
 			this.vScrollBar_trackVolume.TabIndex = 22;
-			this.vScrollBar_trackVolume.Scroll += this.vScrollBar_volume_Scroll;
+			this.vScrollBar_trackVolume.Scroll += this.vScrollBar_volumeTrack_Scroll;
 			// 
 			// button_normalize
 			// 
@@ -562,6 +562,7 @@ namespace AsynCLAudio.Forms
 			this.vScrollBar_masterVolume.Name = "vScrollBar_masterVolume";
 			this.vScrollBar_masterVolume.Size = new Size(20, 135);
 			this.vScrollBar_masterVolume.TabIndex = 48;
+			this.vScrollBar_masterVolume.Scroll += this.vScrollBar_masterVolume_Scroll;
 			// 
 			// label_info_trackVolume
 			// 
@@ -644,7 +645,6 @@ namespace AsynCLAudio.Forms
 			this.Controls.Add(this.pictureBox_waveform);
 			this.MaximizeBox = false;
 			this.MaximumSize = new Size(720, 720);
-			this.MinimizeBox = false;
 			this.MinimumSize = new Size(720, 720);
 			this.Name = "WindowMain";
 			this.Text = "AsynCLAudio (Forms)";

@@ -82,11 +82,16 @@ namespace AsynCLAudio.Core
 			});
 		}
 
-		public void StopAll()
+		public void StopAll(bool remove = false)
 		{
 			foreach (var track in this.tracks.Values)
 			{
 				track.Stop();
+				if (remove)
+				{
+					this.tracks.TryRemove(track.Id, out var t);
+					t?.Dispose();
+				}
 			}
 		}
 
@@ -95,7 +100,7 @@ namespace AsynCLAudio.Core
 			await Task.Run(() =>
 			{
 				// Set master volume for all tracks (LINQ to avoid blocking)
-				var tasks = this.tracks.Values.Select(t => Task.Run(() => t.SetVolume(percentage))).ToArray();
+				var tasks = this.tracks.Values.Select(t => Task.Run(() => t.SetVolume())).ToArray();
 				Task.WaitAll(tasks);
 			});
 		}
