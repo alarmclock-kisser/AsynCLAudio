@@ -464,7 +464,7 @@ namespace AsynCLAudio.Forms
 			this.button_backColor.TabIndex = 38;
 			this.button_backColor.Text = "Back";
 			this.button_backColor.UseVisualStyleBackColor = false;
-			this.button_backColor.Click += this.button_backColor_Click;
+			this.button_backColor.MouseDown += this.button_backColor_Click;
 			// 
 			// button_strobe
 			// 

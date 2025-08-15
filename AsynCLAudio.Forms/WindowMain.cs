@@ -56,6 +56,7 @@ namespace AsynCLAudio.Forms
 			this.button_playback.MouseEnter += this.button_playback_MouseEnter;
 			this.vScrollBar_masterVolume.ValueChanged += (sender, e) => this.UpdateVolumeLabels();
 			this.vScrollBar_trackVolume.ValueChanged += (sender, e) => this.UpdateVolumeLabels();
+			this.pictureBox_waveform.MouseWheel += this.pictureBox_waveform_MouseWheel;
 			this.FillDevicesComboBox(2);
 			this.comboBox_captureDevices.Items.AddRange(AudioRecorder.GetCaptureDevices());
 			var standardCaptureDevice = AudioRecorder.GetDefaultPlaybackDevice();
@@ -255,6 +256,26 @@ namespace AsynCLAudio.Forms
 			}
 		}
 
+		private void pictureBox_waveform_MouseWheel(object? sender, MouseEventArgs e)
+		{
+			if (e.Delta > 0)
+			{
+				// Zoom in
+				if (this.numericUpDown_samplesPerPixel.Value < this.numericUpDown_samplesPerPixel.Maximum)
+				{
+					this.numericUpDown_samplesPerPixel.Value = Math.Min(this.numericUpDown_samplesPerPixel.Value + 1, this.numericUpDown_samplesPerPixel.Maximum);
+				}
+			}
+			else if (e.Delta < 0)
+			{
+				// Zoom out
+				if (this.numericUpDown_samplesPerPixel.Value > this.numericUpDown_samplesPerPixel.Minimum)
+				{
+					this.numericUpDown_samplesPerPixel.Value = Math.Max(this.numericUpDown_samplesPerPixel.Value - 1, this.numericUpDown_samplesPerPixel.Minimum);
+				}
+			}
+		}
+
 		private async Task UpdateBeatDurationLabel(Button button)
 		{
 			// Invoke if necessary
@@ -363,6 +384,10 @@ namespace AsynCLAudio.Forms
 		private void ListBoxTracks_SelectedValueChanged(object? sender, EventArgs e)
 		{
 			this.UpdateInfoView();
+			if (this.SelectedTrack != null && this.SelectedTrack.Playing)
+			{
+				this.playbackTimer.Start();
+			}
 		}
 
 		private void FillStretchKernelsComboBox(string searchKey = "timestretch")
@@ -1004,14 +1029,14 @@ namespace AsynCLAudio.Forms
 			this.FillTracksListBox();
 			this.UpdateInfoView();
 
-			if (this.SelectedTrack != null && this.SelectedTrack.Playing)
+			/*if (this.SelectedTrack != null && this.SelectedTrack.Playing)
 			{
 				this.button_playback.Text = "▶";
 			}
 			else
 			{
 				this.button_playback.Text = "■";
-			}
+			}*/
 		}
 
 		private void numericUpDown_initialBpm_ValueChanged(object sender, EventArgs e)
@@ -1503,52 +1528,80 @@ namespace AsynCLAudio.Forms
 
 		private async void button_backColor_Click(object sender, EventArgs e)
 		{
-			// ColorDialog to select background color
-			ColorDialog colorDialog = new()
+			// If right clicked, switch blaCK 7 WHITE BACKGROUND
+			if (e is MouseEventArgs mouseEvent && mouseEvent.Button == MouseButtons.Right)
 			{
-				AllowFullOpen = true,
-				AnyColor = true,
-				ShowHelp = true,
-				FullOpen = true,
-				Color = this.BackColor
-			};
-
-			if (colorDialog.ShowDialog() == DialogResult.OK)
-			{
-				this.audioCollection.BackColor = colorDialog.Color;
-				this.Log("Background color changed", this.BackColor.ToString());
-
-				this.button_backColor.BackColor = this.audioCollection.BackColor;
-
-				await this.UpdateWaveform();
+				if (this.audioCollection.BackColor == Color.Black)
+				{
+					this.audioCollection.BackColor = Color.White;
+				}
+				else
+				{
+					this.audioCollection.BackColor = Color.Black;
+				}
 			}
+			else
+			{
+				// ColorDialog to select background color
+				ColorDialog colorDialog = new()
+				{
+					AllowFullOpen = true,
+					AnyColor = true,
+					ShowHelp = true,
+					FullOpen = true,
+					Color = this.BackColor
+				};
+
+				if (colorDialog.ShowDialog() == DialogResult.OK)
+				{
+					this.audioCollection.BackColor = colorDialog.Color;
+				}
+			}
+
+			this.button_backColor.BackColor = this.audioCollection.BackColor;
+
+			if (this.button_backColor.BackColor.GetBrightness() < 0.5f)
+			{
+				this.button_backColor.ForeColor = Color.White;
+			}
+			else
+			{
+				this.button_backColor.ForeColor = Color.Black;
+			}
+
+			this.Log("Background color changed", this.audioCollection.BackColor.ToString());
+
+			await this.UpdateWaveform();
 		}
 
 		private async void button_strobe_Click(object sender, EventArgs e)
 		{
-			if (this.button_strobe.ForeColor == Color.Black)
+			await Task.Run(() =>
 			{
-				// Enable strobe effect
-				this.button_strobe.ForeColor = Color.Crimson;
-				this.Log("Strobe effect enabled", "Click again to disable");
+				if (this.button_strobe.ForeColor == Color.Black)
+				{
+					// Enable strobe effect
+					this.button_strobe.ForeColor = Color.Crimson;
+					this.Log("Strobe effect enabled", "Click again to disable");
 
-				this.checkBox_hueGraph.Checked = true;
-				this.numericUpDown_hueShift.Enabled = true;
-				this.numericUpDown_hueShift.Value = 100;
-				this.numericUpDown_fps.Value = 75;
-				this.audioCollection.BackColor = Color.Black;
-			}
-			else
-			{
-				// Disable strobe effect
-				this.button_strobe.ForeColor = Color.Black;
-				this.Log("Strobe effect disabled", "Click again to enable");
-				this.checkBox_hueGraph.Checked = false;
-				this.numericUpDown_hueShift.Enabled = false;
-				this.numericUpDown_hueShift.Value = 5;
-				this.numericUpDown_fps.Value = 30;
-				this.audioCollection.BackColor = this.button_backColor.BackColor;
-			}
+					this.checkBox_hueGraph.Checked = true;
+					this.numericUpDown_hueShift.Enabled = true;
+					this.numericUpDown_hueShift.Value = 100;
+					this.numericUpDown_fps.Value = 75;
+					this.audioCollection.BackColor = Color.Black;
+				}
+				else
+				{
+					// Disable strobe effect
+					this.button_strobe.ForeColor = Color.Black;
+					this.Log("Strobe effect disabled", "Click again to enable");
+					this.checkBox_hueGraph.Checked = false;
+					this.numericUpDown_hueShift.Enabled = false;
+					this.numericUpDown_hueShift.Value = 5;
+					this.numericUpDown_fps.Value = 30;
+					this.audioCollection.BackColor = this.button_backColor.BackColor;
+				}
+			});
 
 			await this.UpdateWaveform();
 		}

@@ -62,7 +62,7 @@ namespace AsynCLAudio.Core
 		public bool Playing = false;
 		public bool Paused = false;
 		// Get position from waveStream
-		private long position => this.waveStream?.Position / sizeof(float) ?? 0;
+		private long position => this.Playing != false && this.waveStream != null ? this.waveStream.Position / sizeof(float) : 0;
 		private double positionSeconds => this.SampleRate <= 0 ? 0 : (double) this.position / this.SampleRate;
 		public TimeSpan CurrentTime => TimeSpan.FromSeconds(this.positionSeconds);
 
@@ -784,7 +784,10 @@ namespace AsynCLAudio.Core
 
 		public void Stop()
 		{
+			this.Playing = false;
+			this.Paused = false;
 			this.waveformUpdateTimer.Stop();
+			this.waveStream?.Dispose();
 			this.player.Stop();
 		}
 
