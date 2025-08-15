@@ -54,8 +54,9 @@ namespace AsynCLAudio.Core
 		public double StretchFactor { get; set; } = 1.0;
 		public float Bpm { get; private set; } = 0.0f;
 
-		public int Volume { get; set; } = 100;
-		private WaveOutEvent player;
+		private float _currentVolume = 1.0f;
+		public int Volume => (int) (this._currentVolume * 100.0f);
+		private WaveOutEvent player = new();
 		private WaveStream? waveStream;
 		public object playerLock = new object();
 
@@ -66,6 +67,12 @@ namespace AsynCLAudio.Core
 		private long position => this.Playing != false && this.waveStream != null ? (this.waveStream.Position / sizeof(float)) / this.Channels : 0;
 		private double positionSeconds => this.SampleRate <= 0 ? 0 : (double) this.position / this.SampleRate;
 		public TimeSpan CurrentTime => TimeSpan.FromSeconds(this.positionSeconds);
+
+		private CancellationTokenSource _loopCts = new();
+		private int _currentLoopValue;
+		private bool _isLooping;
+		private long loopStart = 0;
+		public int Looping => this._isLooping ? this._currentLoopValue : 0;
 
 		private System.Timers.Timer waveformUpdateTimer;
 		private int refreshRateHz = 30;
@@ -81,7 +88,6 @@ namespace AsynCLAudio.Core
 		{
 			this.Id = Guid.NewGuid();
 			this.FilePath = filePath;
-			this.player = new WaveOutEvent();
 
 			this.waveformUpdateTimer = this.SetupTimer(fps);
 			this.ReadBpmTag();
@@ -597,42 +603,48 @@ namespace AsynCLAudio.Core
 		}
 
 		// Playback
-		public async Task SetVolume(float volume)
+		public void SetVolume(float volume, bool smoothTransition = false)
 		{
-			if (volume < 0)
-			{
-				volume = this.Volume;
-			}
+			volume = Math.Clamp(volume, 0.0f, 1.0f);
 
-			// Invoke async
-			await Task.Run(() =>
+			lock (this.playerLock)
 			{
-				if (this.player != null && this.player.PlaybackState == PlaybackState.Playing)
+				if (this.player == null)
 				{
-					this.player.Volume = Math.Clamp(volume, 0f, 1f);
+					return;
 				}
-			});
 
-			this.Volume = (int) (Math.Clamp(volume, 0f, 1f) * 100);
-		}
-
-		public async Task SetVolume(int volume = -1)
-		{
-			if (volume < 0)
-			{
-				volume = this.Volume;
-			}
-
-			// Invoke async
-			await Task.Run(() =>
-			{
-				if (this.player != null && this.player.PlaybackState == PlaybackState.Playing)
+				if (smoothTransition && this.player.PlaybackState == PlaybackState.Playing)
 				{
-					this.player.Volume = Math.Clamp((volume / 100), 0f, 1f);
-				}
-			});
+					// Sanfte Übergänge (optional)
+					Task.Run(async () =>
+					{
+						float startVolume = this._currentVolume;
+						float duration = 0.2f; // 200ms Übergang
+						int steps = 10;
 
-			this.Volume = (int) (Math.Clamp((volume / 100), 0f, 1f) * 100);
+						for (int i = 0; i <= steps; i++)
+						{
+							float t = i / (float) steps;
+							float v = startVolume + (volume - startVolume) * t;
+
+							lock (this.playerLock)
+							{
+								this.player.Volume = v;
+							}
+
+							await Task.Delay((int) (duration * 1000 / steps));
+						}
+						this._currentVolume = volume;
+					});
+				}
+				else
+				{
+					// Direkte Änderung
+					this.player.Volume = volume;
+					this._currentVolume = volume;
+				}
+			}
 		}
 
 		public async Task Play(CancellationToken cancellationToken, Action? onPlaybackStopped = null, float? initialVolume = null)
@@ -1248,72 +1260,161 @@ namespace AsynCLAudio.Core
 			return this.Name;
 		}
 
-		public async Task Loop(int beats = 0)
+		public void JumpByBeats(int beats)
 		{
-			if (beats == 0 || this.player == null)
+			if (beats == 0 || this.player == null || this.waveStream == null ||
+				this.player.PlaybackState != PlaybackState.Playing)
 			{
 				return;
 			}
 
-			// Validate and clamp BPM
-			float bpm = Math.Max(this.Bpm, 60.0f);
-
-			// Calculate samples per beat (for all channels)
-			int samplesPerBeat = (int) Math.Round((this.SampleRate * this.Channels) / (bpm / 60.0f));
-			samplesPerBeat = Math.Max(samplesPerBeat, 1);  // Ensure at least 1 sample
-
-			// Calculate the skip delta in samples
-			int skipDelta = samplesPerBeat * beats;
-
-			await Task.Run(() =>
+			try
 			{
-				if (this.player.PlaybackState == PlaybackState.Stopped)
+				// Try to get the lock with timeout to avoid deadlocks
+				if (Monitor.TryEnter(this.playerLock, TimeSpan.FromMilliseconds(100)))
 				{
-					return;
-				}
-
-				// Convert to sample index (position in float array)
-				int currentSample = (int) this.position;
-
-				// Calculate new sample position
-				int newSample = currentSample + skipDelta;
-
-				// Handle wrap-around
-				if (newSample < 0)
-				{
-					// Skip to end when going negative
-					newSample = 0;
-				}
-				else if (newSample >= this.Data.Length)
-				{
-					// Skip to start when exceeding length
-					newSample = this.Data.Length - 1;
-				}
-
-				// Set new position in bytes
-				this.SetCurrentPosition(newSample);
-
-			});
-		}
-
-		public void SetCurrentPosition(int samplePosition)
-		{
-			if (this.player != null && this.waveStream != null && this.Playing)
-			{
-				lock (this.playerLock) // Thread-Sicherheit
-				{
-					// Position in Bytes setzen
-					this.waveStream.Position = samplePosition * sizeof(float);
-
-					// Bei WaveOut muss Play() neu aufgerufen werden
-					if (this.player.PlaybackState == PlaybackState.Playing)
+					try
 					{
-						//this.player.Stop();
-						//this.player.Init(this.waveStream);
-						//this.player.Play();
+						// Calculate jump
+						float bpm = Math.Max(this.Bpm, 60.0f);
+						int bytesPerSecond = this.waveStream.WaveFormat.AverageBytesPerSecond;
+						int bytesPerBeat = (int) (bytesPerSecond * 60.0f / bpm);
+						int jumpBytes = bytesPerBeat * beats;
+
+						// Calculate and set new position
+						long newPosition = this.waveStream.Position + jumpBytes;
+						newPosition = Math.Max(0, Math.Min(newPosition, this.waveStream.Length));
+						this.waveStream.Position = newPosition;
+						this.loopStart = this.waveStream.Position;
+
+						// Restart looping if it was active
+						if (!this._loopCts.IsCancellationRequested)
+						{
+							_ = this.StartLoop(this._currentLoopValue); // Fire-and-forget restart
+						}
+					}
+					finally
+					{
+						Monitor.Exit(this.playerLock);
 					}
 				}
+				else
+				{
+					Debug.WriteLine("JumpByBeats: Could not acquire lock, operation skipped");
+				}
 			}
+			catch (Exception ex)
+			{
+				Debug.WriteLine($"JumpByBeats error: {ex.Message}");
+			}
+		}
+
+		public async Task StartLoop(int loopValue)
+		{
+			this.StopLoop();
+
+			if (loopValue == 0 || this._isLooping || this.player?.PlaybackState != PlaybackState.Playing)
+			{
+				return;
+			}
+
+			this._currentLoopValue = loopValue;
+			this._isLooping = true;
+			this._loopCts = new CancellationTokenSource();
+
+			try
+			{
+				await Task.Run(async () =>
+				{
+					// Vorab-Berechnungen
+					int bytesPerSecond = 0;
+					int loopBytes = 0;
+					bool isForwardLoop = loopValue > 0;
+
+					lock (this.playerLock)
+					{
+						if (this.waveStream != null)
+						{
+							bytesPerSecond = this.waveStream.WaveFormat.AverageBytesPerSecond;
+							float bpm = Math.Max(this.Bpm, 60.0f);
+							loopBytes = (int) (bytesPerSecond * 60.0f / bpm) * Math.Abs(loopValue);
+						}
+					}
+
+					while (!this._loopCts.IsCancellationRequested &&
+						   this.player?.PlaybackState == PlaybackState.Playing)
+					{
+						long loopStartPos, loopEndPos;
+
+						// 1. Loop-Bereich festlegen
+						lock (this.playerLock)
+						{
+							if (this.waveStream == null)
+							{
+								return;
+							}
+
+							this.loopStart = this.waveStream.Position;
+							loopEndPos = isForwardLoop
+								? Math.Min(this.loopStart + loopBytes, this.waveStream.Length)
+								: Math.Max(0, this.loopStart - loopBytes);
+						}
+
+						// 2. Normal abspielen lassen bis zum Endpunkt
+						bool reachedEnd = false;
+						while (!reachedEnd &&
+							   !this._loopCts.IsCancellationRequested &&
+							   this.player?.PlaybackState == PlaybackState.Playing)
+						{
+							await Task.Delay(50); // Check-Intervall
+
+							lock (this.playerLock)
+							{
+								if (this.waveStream == null)
+								{
+									return;
+								}
+
+								long currentPos = this.waveStream.Position;
+								reachedEnd = isForwardLoop
+									? currentPos >= loopEndPos
+									: currentPos <= loopEndPos;
+							}
+						}
+
+						// 3. Nur zurückspringen wenn natürlich beendet
+						if (reachedEnd && !this._loopCts.IsCancellationRequested)
+						{
+							lock (this.playerLock)
+							{
+								if (this.waveStream != null && isForwardLoop)
+								{
+									this.waveStream.Position = this.loopStart;
+								}
+							}
+						}
+						else
+						{
+							break; // Bei Abbruch raus
+						}
+					}
+				}, this._loopCts.Token);
+			}
+			catch (OperationCanceledException)
+			{
+				/* Expected */
+			}
+			finally
+			{
+				this._isLooping = false;
+			}
+		}
+
+		public void StopLoop()
+		{
+			this._loopCts?.Cancel();
+			this._isLooping = false;
+			this._currentLoopValue = 0;
 		}
 	}
 }

@@ -231,17 +231,52 @@ namespace AsynCLAudio.Forms
 
 		private async void ButtonLoop_Click(object? sender, EventArgs e)
 		{
-			if (sender is Button button && button.Tag is int loopValue)
+			// Check CTRL key state
+			bool loopMode = ModifierKeys.HasFlag(Keys.Control);
+			Button? button = sender as Button;
+
+			if (button == null)
 			{
-				if (this.SelectedTrack != null)
+				this.Log("Loop button click error", "Button is null", true);
+				return;
+			}
+
+			int beats = int.Parse(button.Tag?.ToString() ?? "1");
+
+			if (this.SelectedTrack == null || beats == 0)
+			{
+				this.Log("No track selected for loop control", "Error");
+				return;
+			}
+
+			if (loopMode)
+			{
+				// Reset all button colors first
+				foreach (Control ctrl in this.panel_loop.Controls)
 				{
-					await this.SelectedTrack.Loop(loopValue);
-					this.Log($"Looped track: {loopValue} beats", this.SelectedTrack?.Name ?? "N/A");
+					if (ctrl is Button loopButton)
+					{
+						loopButton.BackColor = SystemColors.Control;
+					}
+				}
+
+				// Handle loop mode
+				if (this.SelectedTrack.Looping != beats || this.SelectedTrack.Looping == 0)
+				{
+					button.BackColor = Color.LightGreen;
+					await this.SelectedTrack.StartLoop(beats);
 				}
 				else
 				{
-					this.Log("No track selected for loop control", "Error");
+					button.BackColor = SystemColors.Control;
+					this.SelectedTrack.StopLoop();
 				}
+			}
+			else
+			{
+				// Handle single jump
+				this.SelectedTrack.JumpByBeats(beats);
+				this.Log($"Jumped track: {beats} beats", this.SelectedTrack?.Name ?? "N/A");
 			}
 		}
 
@@ -599,14 +634,14 @@ namespace AsynCLAudio.Forms
 			{
 				if (e.Button == MouseButtons.Right)
 				{
-					int index = listBox_tracks.IndexFromPoint(e.Location);
+					int index = this.listBox_tracks.IndexFromPoint(e.Location);
 					if (index != ListBox.NoMatches)
 					{
-						listBox_tracks.SelectedIndex = index;
+						this.listBox_tracks.SelectedIndex = index;
 						// Kurze Verzögerung für bessere UX
 						Task.Delay(50).ContinueWith(_ =>
 						{
-							listBox_tracks.Invoke((MethodInvoker) delegate
+							this.listBox_tracks.Invoke((MethodInvoker) delegate
 							{
 								Point center = new Point(Cursor.Position.X - 15, Cursor.Position.Y - 10);
 								contextMenu.Show(center);
@@ -1180,7 +1215,7 @@ namespace AsynCLAudio.Forms
 			this.Log("Successfully reloaded", this.SelectedTrack.Name);
 		}
 
-		private async void vScrollBar_volumeTrack_Scroll(object sender, ScrollEventArgs e)
+		private void vScrollBar_volumeTrack_Scroll(object sender, ScrollEventArgs e)
 		{
 			int masterValue = this.vScrollBar_masterVolume.Value;
 			float masterVolume = 1.0f - masterValue / 100f;
@@ -1190,7 +1225,7 @@ namespace AsynCLAudio.Forms
 
 			if (this.SelectedTrack != null)
 			{
-				await this.SelectedTrack.SetVolume(volume * masterVolume);
+				this.SelectedTrack.SetVolume(volume * masterVolume);
 			}
 
 			this.FillTracksListBox();
@@ -1616,11 +1651,11 @@ namespace AsynCLAudio.Forms
 			}
 		}
 
-		private async void vScrollBar_masterVolume_Scroll(object sender, ScrollEventArgs e)
+		private void vScrollBar_masterVolume_Scroll(object sender, ScrollEventArgs e)
 		{
 			float percentage = (100f - (float) this.vScrollBar_masterVolume.Value) / 100f;
 
-			await this.audioCollection.SetMasterVolume(percentage);
+			//this.audioCollection.SetMasterVolume(percentage);
 
 			this.FillTracksListBox();
 			this.UpdateInfoView();

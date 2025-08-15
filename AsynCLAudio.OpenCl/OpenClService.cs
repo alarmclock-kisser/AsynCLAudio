@@ -149,14 +149,14 @@ namespace AsynCLAudio.OpenCl
 
 			this.GetDevicesPlatforms();
 
-			if (index < 0 || index >= devicesPlatforms.Count)
+			if (index < 0 || index >= this.devicesPlatforms.Count)
 			{
 				return;
 			}
 
 			this.Index = index;
-			this.device = devicesPlatforms.Keys.ElementAt(index);
-			this.platform = devicesPlatforms.Values.ElementAt(index);
+			this.device = this.devicesPlatforms.Keys.ElementAt(index);
+			this.platform = this.devicesPlatforms.Values.ElementAt(index);
 
 			this.context = CL.CreateContext(0, [this.device.Value], 0, IntPtr.Zero, out CLResultCode error);
 			if (error != CLResultCode.Success || this.context == null)

@@ -100,7 +100,7 @@ namespace AsynCLAudio.Core
 			}
 		}
 
-		public async Task SetMasterVolume(float percentage)
+		public void SetMasterVolume(float percentage)
 		{
 			// Ensure percentage is between 0 and 1
 			percentage = Math.Clamp(percentage, 0.0f, 1.0f);
@@ -109,7 +109,7 @@ namespace AsynCLAudio.Core
 			foreach (var track in this.tracks.Values)
 			{
 				int volume = (int) (track.Volume * percentage);
-				await track.SetVolume(volume);
+				track.SetVolume(volume);
 			}	
 
 
