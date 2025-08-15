@@ -69,10 +69,10 @@ namespace AsynCLAudio.Core
 		public TimeSpan CurrentTime => TimeSpan.FromSeconds(this.positionSeconds);
 
 		private CancellationTokenSource _loopCts = new();
-		private int _currentLoopValue;
+		private float _currentLoopValue = 0.0f;
 		private bool _isLooping;
 		private long loopStart = 0;
-		public int Looping => this._isLooping ? this._currentLoopValue : 0;
+		public float Looping => this._isLooping ? this._currentLoopValue : 0;
 
 		private System.Timers.Timer waveformUpdateTimer;
 		private int refreshRateHz = 30;
@@ -1309,7 +1309,7 @@ namespace AsynCLAudio.Core
 			}
 		}
 
-		public async Task StartLoop(int loopValue)
+		public async Task StartLoop(float loopValue)
 		{
 			this.StopLoop();
 
@@ -1337,14 +1337,14 @@ namespace AsynCLAudio.Core
 						{
 							bytesPerSecond = this.waveStream.WaveFormat.AverageBytesPerSecond;
 							float bpm = Math.Max(this.Bpm, 60.0f);
-							loopBytes = (int) (bytesPerSecond * 60.0f / bpm) * Math.Abs(loopValue);
+							loopBytes = (int) ((bytesPerSecond * 60.0f / bpm) * Math.Abs(loopValue));
 						}
 					}
 
 					while (!this._loopCts.IsCancellationRequested &&
 						   this.player?.PlaybackState == PlaybackState.Playing)
 					{
-						long loopStartPos, loopEndPos;
+						long loopEndPos;
 
 						// 1. Loop-Bereich festlegen
 						lock (this.playerLock)

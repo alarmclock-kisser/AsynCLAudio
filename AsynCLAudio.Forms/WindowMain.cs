@@ -30,7 +30,9 @@ namespace AsynCLAudio.Forms
 		private System.Timers.Timer recordingTimer = new(120);
 		private DateTime recordingTime = DateTime.Now;
 
+		private readonly float[] beats = [0.25f, 0.5f, 1.0f, 2.0f, 4.0f, 8.0f, 16.0f, 32.0f];
 		private float estimatedBeatDuration => this.SelectedTrack != null ? (float) (60.0 / this.SelectedTrack.Bpm) : 1.0f;
+		private float currentLoopBeats => this.beats[this.hScrollBar_looping.Value];
 
 		public string masterVolume => "Master" + Environment.NewLine + ((int) (100 - this.vScrollBar_masterVolume.Value)).ToString() + "%";
 		public string trackVolume => "Track" + Environment.NewLine + ((int) (100 - this.vScrollBar_trackVolume.Value)).ToString() + "%";
@@ -229,10 +231,8 @@ namespace AsynCLAudio.Forms
 			}
 		}
 
-		private async void ButtonLoop_Click(object? sender, EventArgs e)
+		private void ButtonLoop_Click(object? sender, EventArgs e)
 		{
-			// Check CTRL key state
-			bool loopMode = ModifierKeys.HasFlag(Keys.Control);
 			Button? button = sender as Button;
 
 			if (button == null)
@@ -249,35 +249,9 @@ namespace AsynCLAudio.Forms
 				return;
 			}
 
-			if (loopMode)
-			{
-				// Reset all button colors first
-				foreach (Control ctrl in this.panel_loop.Controls)
-				{
-					if (ctrl is Button loopButton)
-					{
-						loopButton.BackColor = SystemColors.Control;
-					}
-				}
-
-				// Handle loop mode
-				if (this.SelectedTrack.Looping != beats || this.SelectedTrack.Looping == 0)
-				{
-					button.BackColor = Color.LightGreen;
-					await this.SelectedTrack.StartLoop(beats);
-				}
-				else
-				{
-					button.BackColor = SystemColors.Control;
-					this.SelectedTrack.StopLoop();
-				}
-			}
-			else
-			{
-				// Handle single jump
-				this.SelectedTrack.JumpByBeats(beats);
-				this.Log($"Jumped track: {beats} beats", this.SelectedTrack?.Name ?? "N/A");
-			}
+			// Handle single jump
+			this.SelectedTrack.JumpByBeats(beats);
+			this.Log($"Jumped track: {beats} beats", this.SelectedTrack?.Name ?? "N/A");
 		}
 
 		private void pictureBox_waveform_MouseWheel(object? sender, MouseEventArgs e)
@@ -440,7 +414,7 @@ namespace AsynCLAudio.Forms
 				track.UpdateBpm(track.Bpm / 100f);
 			}
 
-			
+
 			this.label_info_beatDuration.Text = $"1 beat ≈  {this.estimatedBeatDuration:F3} sec.";
 
 			this.numericUpDown_initialBpm.Value = (decimal) Math.Max((float) this.numericUpDown_initialBpm.Minimum, (float) (track.Bpm));
@@ -660,83 +634,6 @@ namespace AsynCLAudio.Forms
 			this.label_info_trackVolume.Text = this.trackVolume;
 		}
 
-
-		private async Task StretchAllParallel()
-		{
-			float target = (float) this.numericUpDown_targetBpm.Value;
-			int chunkSize = (int) this.numericUpDown_chunkSize.Value;
-			float overlap = (float) this.numericUpDown_overlap.Value;
-			string kernel = this.comboBox_stretchKernels.SelectedItem?.ToString() ?? string.Empty;
-
-			var lastUpdate = DateTime.MinValue;
-			var progressHandler = new Progress<int>(value =>
-			{
-				if (DateTime.Now - lastUpdate < TimeSpan.FromMilliseconds(100))
-				{
-					return;
-				}
-
-				lastUpdate = DateTime.Now;
-				if (this.progressBar_processing.InvokeRequired)
-				{
-					this.progressBar_processing.Invoke(new Action(() => this.progressBar_processing.Increment(value)));
-				}
-				else
-				{
-					this.progressBar_processing.Increment(value);
-				}
-			});
-
-			// Create task for each track
-			List<Task> stretchTasks = [];
-			int chunkCount = 0;
-			foreach (var track in this.audioCollection.Tracks)
-			{
-				if (track.Bpm < 60)
-				{
-					this.Log("Stretch error", $"Track '{track.Name}' has a BPM below 60, skipping", true);
-					continue;
-				}
-
-				chunkCount += (int) Math.Ceiling((double) track.Length / chunkSize);
-
-				double factor = (double) (track.Bpm / target);
-
-				stretchTasks.Add(Task.Run(() => this.openClService.TimeStretch(track, kernel, "", factor, chunkSize, overlap, progressHandler)));
-			}
-
-			// Set progress bar (max = chunkCount * 6, value = 0)
-			this.progressBar_processing.Maximum = chunkCount * 6;
-			this.progressBar_processing.Value = 0;
-			this.Log($"Proposed chunk count to process: " + chunkCount, $"{stretchTasks.Count} tracks");
-
-			// Wait for all tasks to complete (iterate through each track!)
-			foreach (var task in stretchTasks)
-			{
-				try
-				{
-					await task;
-				}
-				catch (Exception ex)
-				{
-					this.Log("Stretch error", ex.Message, true);
-				}
-			}
-
-			// Reset progress bar
-			if (this.progressBar_processing.InvokeRequired)
-			{
-				this.progressBar_processing.Invoke(new Action(() => this.progressBar_processing.Value = 0));
-			}
-			else
-			{
-				this.progressBar_processing.Value = 0;
-			}
-
-			// Update view
-			this.FillTracksListBox();
-		}
-
 		private async Task StretchAll()
 		{
 			string kernelName = this.comboBox_stretchKernels.SelectedItem?.ToString() ?? string.Empty;
@@ -749,6 +646,10 @@ namespace AsynCLAudio.Forms
 				this.Log("Created output directory", outputDir);
 			}
 
+			// Progress handler for progress bar batch
+			progressBar_batch.Value = 0;
+			progressBar_batch.Maximum = this.audioCollection.Tracks.Count;
+
 			ConcurrentBag<AudioObj> selectedTracks = [];
 
 			foreach (var track in this.audioCollection.Tracks)
@@ -756,11 +657,10 @@ namespace AsynCLAudio.Forms
 				if (track.Bpm < 60)
 				{
 					this.Log("Stretch error", $"Track '{track.Name}' has a BPM below 60, skipping", true);
+					this.progressBar_batch.Invoke(new Action(() => this.progressBar_batch.Increment(1)));
+					track.IsProcessing = false;
 					continue;
 				}
-
-				// Add track to bag
-				selectedTracks.Add(track);
 
 				// Skip if bpm is same or matches (*2 or /2)
 				if (track.Bpm == (float) this.numericUpDown_targetBpm.Value ||
@@ -769,8 +669,13 @@ namespace AsynCLAudio.Forms
 					Math.Abs(track.Bpm - (float) this.numericUpDown_targetBpm.Value / 2) < 0.01)
 				{
 					this.Log($"Skipping '{track.Name}' ({track.Bpm} BPM), already matches target BPM", "No processing needed");
+					this.progressBar_batch.Invoke(new Action(() => this.progressBar_batch.Increment(1)));
+					track.IsProcessing = false;
 					continue;
 				}
+
+				// Add track to bag
+				selectedTracks.Add(track);
 
 				track.IsProcessing = true;
 				this.FillTracksListBox();
@@ -838,8 +743,13 @@ namespace AsynCLAudio.Forms
 					this.progressBar_processing.Value = 0;
 				}
 
+				progressBar_batch.Invoke(new Action(() => progressBar_batch.Increment(1)));
+
 				track.IsProcessing = false;
 			}
+
+			// Reset progress bar
+			this.progressBar_batch.Invoke(new Action(() => this.progressBar_batch.Value = 0));
 
 			// Log total processed tracks + time
 			int count = selectedTracks.Count;
@@ -1000,7 +910,7 @@ namespace AsynCLAudio.Forms
 				this.SelectedTrack.Stop();
 				this.playbackTimer.Elapsed -= (sender, e) => this.UpdateWaveform().Wait();
 				this.Log("Playback stopped ■", name);
-				
+
 
 				if (this.checkBox_removeAfterPlayback.Checked)
 				{
@@ -1658,6 +1568,38 @@ namespace AsynCLAudio.Forms
 
 			this.FillTracksListBox();
 			this.UpdateInfoView();
+		}
+
+		private async void button_loop_Click(object sender, EventArgs e)
+		{
+			if (this.SelectedTrack == null)
+			{
+				this.Log("Loop error", "Please select a track to loop", true);
+				return;
+			}
+
+			if (this.SelectedTrack.Looping == 0)
+			{
+				this.button_loop.BackColor = Color.LightGreen;
+				await this.SelectedTrack.StartLoop(this.currentLoopBeats);
+			}
+			else
+			{
+				this.button_loop.BackColor = SystemColors.Control;
+				this.SelectedTrack.StopLoop();
+			}
+
+
+		}
+
+		private async void hScrollBar_looping_Scroll(object sender, ScrollEventArgs e)
+		{
+			this.label_info_looping.Text = $"Looping: {this.currentLoopBeats} beats";
+
+			if (this.SelectedTrack != null && (this.SelectedTrack.Looping != 0 && this.SelectedTrack.Looping != this.currentLoopBeats))
+			{
+				await this.SelectedTrack.StartLoop(this.currentLoopBeats);
+			}
 		}
 	}
 }

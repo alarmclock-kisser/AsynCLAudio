@@ -75,6 +75,10 @@ namespace AsynCLAudio.Forms
 			this.windowMainBindingSource = new BindingSource(this.components);
 			this.panel_loop = new Panel();
 			this.label_info_beatDuration = new Label();
+			this.progressBar_batch = new ProgressBar();
+			this.hScrollBar_looping = new HScrollBar();
+			this.label_info_looping = new Label();
+			this.button_loop = new Button();
 			((System.ComponentModel.ISupportInitialize) this.pictureBox_waveform).BeginInit();
 			((System.ComponentModel.ISupportInitialize) this.audioCollectionBindingSource).BeginInit();
 			((System.ComponentModel.ISupportInitialize) this.numericUpDown_chunkSize).BeginInit();
@@ -144,7 +148,7 @@ namespace AsynCLAudio.Forms
 			// 
 			// numericUpDown_chunkSize
 			// 
-			this.numericUpDown_chunkSize.Location = new Point(93, 455);
+			this.numericUpDown_chunkSize.Location = new Point(92, 439);
 			this.numericUpDown_chunkSize.Maximum = new decimal(new int[] { 65536, 0, 0, 0 });
 			this.numericUpDown_chunkSize.Minimum = new decimal(new int[] { 128, 0, 0, 0 });
 			this.numericUpDown_chunkSize.Name = "numericUpDown_chunkSize";
@@ -156,7 +160,7 @@ namespace AsynCLAudio.Forms
 			// 
 			this.numericUpDown_overlap.DecimalPlaces = 2;
 			this.numericUpDown_overlap.Increment = new decimal(new int[] { 5, 0, 0, 131072 });
-			this.numericUpDown_overlap.Location = new Point(174, 455);
+			this.numericUpDown_overlap.Location = new Point(173, 439);
 			this.numericUpDown_overlap.Maximum = new decimal(new int[] { 85, 0, 0, 131072 });
 			this.numericUpDown_overlap.Name = "numericUpDown_overlap";
 			this.numericUpDown_overlap.Size = new Size(75, 23);
@@ -174,7 +178,7 @@ namespace AsynCLAudio.Forms
 			// 
 			// button_stretch
 			// 
-			this.button_stretch.Location = new Point(12, 499);
+			this.button_stretch.Location = new Point(11, 483);
 			this.button_stretch.Name = "button_stretch";
 			this.button_stretch.Size = new Size(75, 23);
 			this.button_stretch.TabIndex = 9;
@@ -206,7 +210,7 @@ namespace AsynCLAudio.Forms
 			// 
 			this.numericUpDown_initialBpm.DecimalPlaces = 4;
 			this.numericUpDown_initialBpm.Increment = new decimal(new int[] { 5, 0, 0, 65536 });
-			this.numericUpDown_initialBpm.Location = new Point(93, 499);
+			this.numericUpDown_initialBpm.Location = new Point(92, 483);
 			this.numericUpDown_initialBpm.Maximum = new decimal(new int[] { 360, 0, 0, 0 });
 			this.numericUpDown_initialBpm.Minimum = new decimal(new int[] { 10, 0, 0, 0 });
 			this.numericUpDown_initialBpm.Name = "numericUpDown_initialBpm";
@@ -219,7 +223,7 @@ namespace AsynCLAudio.Forms
 			// 
 			this.numericUpDown_targetBpm.DecimalPlaces = 4;
 			this.numericUpDown_targetBpm.Increment = new decimal(new int[] { 5, 0, 0, 65536 });
-			this.numericUpDown_targetBpm.Location = new Point(174, 499);
+			this.numericUpDown_targetBpm.Location = new Point(173, 483);
 			this.numericUpDown_targetBpm.Maximum = new decimal(new int[] { 360, 0, 0, 0 });
 			this.numericUpDown_targetBpm.Minimum = new decimal(new int[] { 10, 0, 0, 0 });
 			this.numericUpDown_targetBpm.Name = "numericUpDown_targetBpm";
@@ -231,7 +235,7 @@ namespace AsynCLAudio.Forms
 			// numericUpDown_stretchFactor
 			// 
 			this.numericUpDown_stretchFactor.DecimalPlaces = 12;
-			this.numericUpDown_stretchFactor.Location = new Point(255, 499);
+			this.numericUpDown_stretchFactor.Location = new Point(254, 483);
 			this.numericUpDown_stretchFactor.Maximum = new decimal(new int[] { 10, 0, 0, 0 });
 			this.numericUpDown_stretchFactor.Minimum = new decimal(new int[] { 5, 0, 0, 131072 });
 			this.numericUpDown_stretchFactor.Name = "numericUpDown_stretchFactor";
@@ -243,7 +247,7 @@ namespace AsynCLAudio.Forms
 			// label_info_initialBpm
 			// 
 			this.label_info_initialBpm.AutoSize = true;
-			this.label_info_initialBpm.Location = new Point(93, 481);
+			this.label_info_initialBpm.Location = new Point(92, 465);
 			this.label_info_initialBpm.Name = "label_info_initialBpm";
 			this.label_info_initialBpm.Size = new Size(55, 15);
 			this.label_info_initialBpm.TabIndex = 15;
@@ -252,7 +256,7 @@ namespace AsynCLAudio.Forms
 			// label_info_targetBpm
 			// 
 			this.label_info_targetBpm.AutoSize = true;
-			this.label_info_targetBpm.Location = new Point(174, 481);
+			this.label_info_targetBpm.Location = new Point(173, 465);
 			this.label_info_targetBpm.Name = "label_info_targetBpm";
 			this.label_info_targetBpm.Size = new Size(68, 15);
 			this.label_info_targetBpm.TabIndex = 16;
@@ -261,7 +265,7 @@ namespace AsynCLAudio.Forms
 			// label_info_timeStretchFactor
 			// 
 			this.label_info_timeStretchFactor.AutoSize = true;
-			this.label_info_timeStretchFactor.Location = new Point(255, 481);
+			this.label_info_timeStretchFactor.Location = new Point(254, 465);
 			this.label_info_timeStretchFactor.Name = "label_info_timeStretchFactor";
 			this.label_info_timeStretchFactor.Size = new Size(109, 15);
 			this.label_info_timeStretchFactor.TabIndex = 17;
@@ -288,7 +292,7 @@ namespace AsynCLAudio.Forms
 			// 
 			// progressBar_processing
 			// 
-			this.progressBar_processing.Location = new Point(11, 528);
+			this.progressBar_processing.Location = new Point(11, 512);
 			this.progressBar_processing.Name = "progressBar_processing";
 			this.progressBar_processing.Size = new Size(353, 15);
 			this.progressBar_processing.TabIndex = 20;
@@ -347,7 +351,7 @@ namespace AsynCLAudio.Forms
 			this.checkBox_autoExport.AutoSize = true;
 			this.checkBox_autoExport.Checked = true;
 			this.checkBox_autoExport.CheckState = CheckState.Checked;
-			this.checkBox_autoExport.Location = new Point(12, 459);
+			this.checkBox_autoExport.Location = new Point(11, 443);
 			this.checkBox_autoExport.Name = "checkBox_autoExport";
 			this.checkBox_autoExport.Size = new Size(59, 34);
 			this.checkBox_autoExport.TabIndex = 26;
@@ -395,7 +399,7 @@ namespace AsynCLAudio.Forms
 			// label_info_chunkSize
 			// 
 			this.label_info_chunkSize.AutoSize = true;
-			this.label_info_chunkSize.Location = new Point(93, 438);
+			this.label_info_chunkSize.Location = new Point(92, 422);
 			this.label_info_chunkSize.Name = "label_info_chunkSize";
 			this.label_info_chunkSize.Size = new Size(64, 15);
 			this.label_info_chunkSize.TabIndex = 32;
@@ -404,7 +408,7 @@ namespace AsynCLAudio.Forms
 			// label_info_overlap
 			// 
 			this.label_info_overlap.AutoSize = true;
-			this.label_info_overlap.Location = new Point(174, 437);
+			this.label_info_overlap.Location = new Point(173, 421);
 			this.label_info_overlap.Name = "label_info_overlap";
 			this.label_info_overlap.Size = new Size(48, 15);
 			this.label_info_overlap.TabIndex = 33;
@@ -595,7 +599,7 @@ namespace AsynCLAudio.Forms
 			// panel_loop
 			// 
 			this.panel_loop.BackColor = SystemColors.Control;
-			this.panel_loop.Location = new Point(11, 675);
+			this.panel_loop.Location = new Point(12, 690);
 			this.panel_loop.Name = "panel_loop";
 			this.panel_loop.Size = new Size(372, 45);
 			this.panel_loop.TabIndex = 51;
@@ -603,11 +607,47 @@ namespace AsynCLAudio.Forms
 			// label_info_beatDuration
 			// 
 			this.label_info_beatDuration.AutoSize = true;
-			this.label_info_beatDuration.Location = new Point(11, 723);
+			this.label_info_beatDuration.Location = new Point(12, 672);
 			this.label_info_beatDuration.Name = "label_info_beatDuration";
 			this.label_info_beatDuration.Size = new Size(146, 15);
 			this.label_info_beatDuration.TabIndex = 52;
 			this.label_info_beatDuration.Text = "No beat duration available";
+			// 
+			// progressBar_batch
+			// 
+			this.progressBar_batch.Location = new Point(11, 533);
+			this.progressBar_batch.Name = "progressBar_batch";
+			this.progressBar_batch.Size = new Size(353, 10);
+			this.progressBar_batch.TabIndex = 53;
+			// 
+			// hScrollBar_looping
+			// 
+			this.hScrollBar_looping.LargeChange = 1;
+			this.hScrollBar_looping.Location = new Point(388, 690);
+			this.hScrollBar_looping.Maximum = 7;
+			this.hScrollBar_looping.Name = "hScrollBar_looping";
+			this.hScrollBar_looping.Size = new Size(304, 17);
+			this.hScrollBar_looping.TabIndex = 54;
+			this.hScrollBar_looping.Scroll += this.hScrollBar_looping_Scroll;
+			// 
+			// label_info_looping
+			// 
+			this.label_info_looping.AutoSize = true;
+			this.label_info_looping.Location = new Point(388, 672);
+			this.label_info_looping.Name = "label_info_looping";
+			this.label_info_looping.Size = new Size(109, 15);
+			this.label_info_looping.TabIndex = 55;
+			this.label_info_looping.Text = "Looping: 0.25 beats";
+			// 
+			// button_loop
+			// 
+			this.button_loop.Location = new Point(387, 710);
+			this.button_loop.Name = "button_loop";
+			this.button_loop.Size = new Size(75, 25);
+			this.button_loop.TabIndex = 56;
+			this.button_loop.Text = "Loop";
+			this.button_loop.UseVisualStyleBackColor = true;
+			this.button_loop.Click += this.button_loop_Click;
 			// 
 			// WindowMain
 			// 
@@ -615,6 +655,10 @@ namespace AsynCLAudio.Forms
 			this.AutoScaleMode = AutoScaleMode.Font;
 			this.BackColor = SystemColors.ControlLight;
 			this.ClientSize = new Size(704, 801);
+			this.Controls.Add(this.button_loop);
+			this.Controls.Add(this.label_info_looping);
+			this.Controls.Add(this.hScrollBar_looping);
+			this.Controls.Add(this.progressBar_batch);
 			this.Controls.Add(this.label_info_beatDuration);
 			this.Controls.Add(this.panel_loop);
 			this.Controls.Add(this.label_info_masterVolume);
@@ -744,5 +788,9 @@ namespace AsynCLAudio.Forms
 		private BindingSource windowMainBindingSource;
 		private Panel panel_loop;
 		private Label label_info_beatDuration;
+		private ProgressBar progressBar_batch;
+		private HScrollBar hScrollBar_looping;
+		private Label label_info_looping;
+		private Button button_loop;
 	}
 }
