@@ -128,7 +128,7 @@ namespace AsynCLAudio.Forms
 			this.recordingTimer.Elapsed -= this.RecordingTimer_Elapsed;
 
 			// Stop recording if running
-			if (this.recording)
+			if (AudioRecorder.IsRecording)
 			{
 				AudioRecorder.StopRecording();
 				this.recording = false;
@@ -1576,32 +1576,36 @@ namespace AsynCLAudio.Forms
 
 		private async void button_strobe_Click(object sender, EventArgs e)
 		{
-			await Task.Run(() =>
+			if (this.button_strobe.ForeColor == Color.Black)
 			{
-				if (this.button_strobe.ForeColor == Color.Black)
-				{
-					// Enable strobe effect
-					this.button_strobe.ForeColor = Color.Crimson;
-					this.Log("Strobe effect enabled", "Click again to disable");
+				// Enable strobe effect
+				this.button_strobe.ForeColor = Color.Crimson;
+				this.checkBox_hueGraph.Checked = true;
+				this.numericUpDown_hueShift.Enabled = true;
+				this.numericUpDown_hueShift.Value = 100;
+				this.numericUpDown_fps.Value = 75;
+				this.audioCollection.BackColor = Color.Black;
+			}
+			else
+			{
+				// Disable strobe effect
+				this.button_strobe.ForeColor = Color.Black;
+				this.Log("Strobe effect disabled", "Click again to enable");
+				this.checkBox_hueGraph.Checked = false;
+				this.numericUpDown_hueShift.Enabled = false;
+				this.numericUpDown_hueShift.Value = 5;
+				this.numericUpDown_fps.Value = 30;
+				this.audioCollection.BackColor = this.button_backColor.BackColor;
+			}
 
-					this.checkBox_hueGraph.Checked = true;
-					this.numericUpDown_hueShift.Enabled = true;
-					this.numericUpDown_hueShift.Value = 100;
-					this.numericUpDown_fps.Value = 75;
-					this.audioCollection.BackColor = Color.Black;
-				}
-				else
-				{
-					// Disable strobe effect
-					this.button_strobe.ForeColor = Color.Black;
-					this.Log("Strobe effect disabled", "Click again to enable");
-					this.checkBox_hueGraph.Checked = false;
-					this.numericUpDown_hueShift.Enabled = false;
-					this.numericUpDown_hueShift.Value = 5;
-					this.numericUpDown_fps.Value = 30;
-					this.audioCollection.BackColor = this.button_backColor.BackColor;
-				}
-			});
+			if (this.button_strobe.ForeColor == Color.Crimson)
+			{
+				this.Log("Strobe effect enabled", "Click again to disable");
+			}
+			else
+			{
+				this.Log("Strobe effect disabled", "Click again to enable");
+			}
 
 			await this.UpdateWaveform();
 		}
