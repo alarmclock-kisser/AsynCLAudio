@@ -762,11 +762,6 @@ namespace AsynCLAudio.Forms
 				// Add track to bag
 				selectedTracks.Add(track);
 
-				track.IsProcessing = true;
-				this.FillTracksListBox();
-				this.UpdateInfoView();
-
-
 				// Skip if bpm is same or matches (*2 or /2)
 				if (track.Bpm == (float) this.numericUpDown_targetBpm.Value ||
 					Math.Abs(track.Bpm - (float) this.numericUpDown_targetBpm.Value) < 0.01 ||
@@ -776,6 +771,10 @@ namespace AsynCLAudio.Forms
 					this.Log($"Skipping '{track.Name}' ({track.Bpm} BPM), already matches target BPM", "No processing needed");
 					continue;
 				}
+
+				track.IsProcessing = true;
+				this.FillTracksListBox();
+				this.UpdateInfoView();
 
 				double factor = (double) (track.Bpm / (double) this.numericUpDown_targetBpm.Value);
 				int chunkSize = (int) this.numericUpDown_chunkSize.Value;
