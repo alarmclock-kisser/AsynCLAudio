@@ -100,14 +100,19 @@ namespace AsynCLAudio.Core
 			}
 		}
 
-		public async Task SetMasterVolume(int percentage)
+		public async Task SetMasterVolume(float percentage)
 		{
-			await Task.Run(() =>
+			// Ensure percentage is between 0 and 1
+			percentage = Math.Clamp(percentage, 0.0f, 1.0f);
+
+			
+			foreach (var track in this.tracks.Values)
 			{
-				// Set master volume for all tracks (LINQ to avoid blocking)
-				var tasks = this.tracks.Values.Select(t => Task.Run(() => t.SetVolume())).ToArray();
-				Task.WaitAll(tasks);
-			});
+				int volume = (int) (track.Volume * percentage);
+				await track.SetVolume(volume);
+			}	
+
+
 		}
 
 		public async Task DisposeAsync()

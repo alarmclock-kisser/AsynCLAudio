@@ -22,7 +22,7 @@ namespace AsynCLAudio.Core
 		public Guid Id { get; private set; } = Guid.Empty;
 		public DateTime CreatedAt { get; private set; } = DateTime.Now;
 		public string FilePath { get; set; } = string.Empty;
-		public string Name => ((this.player.PlaybackState == PlaybackState.Playing || this.player.PlaybackState == PlaybackState.Paused) ? "▶ " : "") + Path.GetFileNameWithoutExtension(this.FilePath);
+		public string Name => (this.IsProcessing ? "~Processing~ " : "") + ((this.player.PlaybackState == PlaybackState.Playing) ? "▶ " : this.player.PlaybackState == PlaybackState.Paused ? "|| " : "") + Path.GetFileNameWithoutExtension(this.FilePath) + $" ({this.Volume}%)";
 
 		public float[] Data { get; private set; } = [];
 		private int originalSampleRate = 0;
@@ -41,6 +41,7 @@ namespace AsynCLAudio.Core
 		public TimeSpan Duration => TimeSpan.FromSeconds(this.TotalSeconds);
 		public float SizeInMb => this.Data.LongLength * sizeof(float) / (1024.0f * 1024.0f);
 
+		public bool IsProcessing { get; set; } = false;
 		public float ElapsedLoadingTime { get; set; } = 0.0f;
 		public float ElapsedProcessingTime { get; set; } = 0.0f;
 
@@ -610,11 +611,9 @@ namespace AsynCLAudio.Core
 				{
 					this.player.Volume = Math.Clamp(volume, 0f, 1f);
 				}
-				else
-				{
-					this.Volume = (int) (Math.Clamp(volume, 0f, 1f) * 100);
-				}
 			});
+
+			this.Volume = (int) (Math.Clamp(volume, 0f, 1f) * 100);
 		}
 
 		public async Task SetVolume(int volume = -1)
@@ -631,18 +630,9 @@ namespace AsynCLAudio.Core
 				{
 					this.player.Volume = Math.Clamp((volume / 100), 0f, 1f);
 				}
-				else
-				{
-					this.Volume = (int) (Math.Clamp((volume / 100), 0f, 1f) * 100);
-				}
 			});
-		}
 
-		public async Task ApplyMasterVolume(int masterPercentage = 100)
-		{
-			this.Volume = (int) ((float) this.Volume * masterPercentage / 100f);
-
-			await this.SetVolume();
+			this.Volume = (int) (Math.Clamp((volume / 100), 0f, 1f) * 100);
 		}
 
 		public async Task Play(CancellationToken cancellationToken, Action? onPlaybackStopped = null, float? initialVolume = null)
@@ -1154,7 +1144,7 @@ namespace AsynCLAudio.Core
 				outPath = Path.GetDirectoryName(outFile) ?? string.Empty;
 			}
 
-			string baseFileName = $"{this.Name} [{this.Bpm:F1}]";
+			string baseFileName = $"{this.Name.Replace("▶ ", "").Replace("|| ", "")} [{this.Bpm:F1}]";
 
 			// Validate and prepare output directory
 			outPath = (await this.PrepareOutputPath(outPath, baseFileName)) ?? Path.GetTempPath();
@@ -1261,7 +1251,9 @@ namespace AsynCLAudio.Core
 		public async Task Loop(int beats = 0)
 		{
 			if (beats == 0 || this.player == null)
+			{
 				return;
+			}
 
 			// Validate and clamp BPM
 			float bpm = Math.Max(this.Bpm, 60.0f);
@@ -1276,13 +1268,12 @@ namespace AsynCLAudio.Core
 			await Task.Run(() =>
 			{
 				if (this.player.PlaybackState == PlaybackState.Stopped)
+				{
 					return;
-
-				// Current position in bytes
-				long currentPos = this.player.GetPosition();
+				}
 
 				// Convert to sample index (position in float array)
-				int currentSample = (int) (currentPos / sizeof(float));
+				int currentSample = (int) this.position;
 
 				// Calculate new sample position
 				int newSample = currentSample + skipDelta;
@@ -1302,12 +1293,12 @@ namespace AsynCLAudio.Core
 				// Set new position in bytes
 				this.SetCurrentPosition(newSample);
 
-			}).ConfigureAwait(false);
+			});
 		}
 
 		public void SetCurrentPosition(int samplePosition)
 		{
-			if (this.player != null && this.waveStream != null)
+			if (this.player != null && this.waveStream != null && this.Playing)
 			{
 				lock (this.playerLock) // Thread-Sicherheit
 				{

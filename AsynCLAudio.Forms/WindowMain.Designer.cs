@@ -560,10 +560,12 @@ namespace AsynCLAudio.Forms
 			// vScrollBar_masterVolume
 			// 
 			this.vScrollBar_masterVolume.Cursor = Cursors.NoMoveVert;
+			this.vScrollBar_masterVolume.Enabled = false;
 			this.vScrollBar_masterVolume.Location = new Point(388, 385);
 			this.vScrollBar_masterVolume.Name = "vScrollBar_masterVolume";
 			this.vScrollBar_masterVolume.Size = new Size(20, 135);
 			this.vScrollBar_masterVolume.TabIndex = 48;
+			this.vScrollBar_masterVolume.Visible = false;
 			this.vScrollBar_masterVolume.Scroll += this.vScrollBar_masterVolume_Scroll;
 			// 
 			// label_info_trackVolume

@@ -224,17 +224,6 @@ namespace AsynCLAudio.Forms
 					Tag = tags[i]
 				};
 				button.Click += this.ButtonLoop_Click;
-				button.MouseEnter += async (sender, e) =>
-				{
-					if (this.SelectedTrack == null)
-					{
-						this.label_info_beatDuration.Text = "No beat duration available";
-						return;
-					}
-
-					// While mouse is over the button, show tooltip with estimated beat duration
-					await this.UpdateBeatDurationLabel(button);
-				};
 				this.panel_loop.Controls.Add(button);
 				button.Location = new Point(((this.panel_loop.Width / 10 - buttonSize) / 2) + (i) * (buttonSize + 2), (this.panel_loop.Height - buttonSize) / 2);
 			}
@@ -258,7 +247,7 @@ namespace AsynCLAudio.Forms
 
 		private void pictureBox_waveform_MouseWheel(object? sender, MouseEventArgs e)
 		{
-			if (e.Delta > 0)
+			if (e.Delta < 0)
 			{
 				// Zoom in
 				if (this.numericUpDown_samplesPerPixel.Value < this.numericUpDown_samplesPerPixel.Maximum)
@@ -266,7 +255,7 @@ namespace AsynCLAudio.Forms
 					this.numericUpDown_samplesPerPixel.Value = Math.Min(this.numericUpDown_samplesPerPixel.Value + 1, this.numericUpDown_samplesPerPixel.Maximum);
 				}
 			}
-			else if (e.Delta < 0)
+			else if (e.Delta > 0)
 			{
 				// Zoom out
 				if (this.numericUpDown_samplesPerPixel.Value > this.numericUpDown_samplesPerPixel.Minimum)
@@ -274,46 +263,6 @@ namespace AsynCLAudio.Forms
 					this.numericUpDown_samplesPerPixel.Value = Math.Max(this.numericUpDown_samplesPerPixel.Value - 1, this.numericUpDown_samplesPerPixel.Minimum);
 				}
 			}
-		}
-
-		private async Task UpdateBeatDurationLabel(Button button)
-		{
-			// Invoke if necessary
-			if (this.disposing || this.IsDisposed || !this.IsHandleCreated)
-			{
-				return;
-			}
-
-			while (this.panel_loop.ClientRectangle.Contains(this.panel_loop.PointToClient(Cursor.Position)))
-			{
-				await Task.Run(() =>
-				{
-					try
-					{
-						this.Invoke((Action) (() =>
-						{
-							this.label_info_beatDuration.Text = $"{button.Tag} beat {(Math.Abs((int) (button.Tag ?? 0)) > 1 ? "s" : " ")} ≈ {(int) (button.Tag ?? 0) * this.estimatedBeatDuration:F3} sec.";
-						}));
-						Application.DoEvents();
-						System.Threading.Thread.Sleep(20);
-					}
-					catch (Exception ex)
-					{
-						Console.WriteLine(ex);
-					}
-				});
-
-				if (!this.panel_loop.ClientRectangle.Contains(this.panel_loop.PointToClient(Cursor.Position)))
-				{
-					// If mouse is not over the button anymore, hide tooltip
-					break;
-				}
-			}
-
-			this.Invoke((Action) (() =>
-			{
-				this.label_info_beatDuration.Text = $"1 beat  ≈ {this.estimatedBeatDuration:F3} sec.";
-			}));
 		}
 
 		private void listBox_log_DoubleClick(Object? sender, EventArgs e)
@@ -359,7 +308,7 @@ namespace AsynCLAudio.Forms
 			this.listBox_tracks.DataSource = null; // Erst zurücksetzen
 			this.listBox_tracks.DisplayMember = "Name"; // Property die angezeigt werden soll
 			this.listBox_tracks.ValueMember = "Id"; // Optional: Wert-Property
-			this.listBox_tracks.DataSource = this.audioCollection.Entries;
+			this.listBox_tracks.DataSource = this.audioCollection.Tracks;
 
 			// Alte Selection wiederherstellen falls gewünscht
 			if (keepSelection && selectedIndex > 0 || selectedIndex < this.audioCollection.Tracks.Count)
@@ -384,6 +333,7 @@ namespace AsynCLAudio.Forms
 		private void ListBoxTracks_SelectedValueChanged(object? sender, EventArgs e)
 		{
 			this.UpdateInfoView();
+			this.vScrollBar_trackVolume.Value = (100 - this.SelectedTrack?.Volume) ?? 100;
 			if (this.SelectedTrack != null && this.SelectedTrack.Playing)
 			{
 				this.playbackTimer.Start();
@@ -412,13 +362,7 @@ namespace AsynCLAudio.Forms
 		{
 			this.button_playback.Text = this.SelectedTrack?.Playing == true ? "■" : "▶";
 			this.button_pause.Text = this.SelectedTrack?.Paused == false ? "||" : "▶";
-			this.button_pause.Enabled = this.SelectedTrack?.Playing == true;
-
-			this.numericUpDown_chunkSize.Enabled = true;
-			this.numericUpDown_overlap.Enabled = true;
-			this.button_stretch.Enabled = true;
-			this.button_reset.Enabled = true;
-			this.comboBox_stretchKernels.Enabled = true;
+			this.button_pause.Enabled = this.SelectedTrack?.Playing == true || this.SelectedTrack?.Paused == true;
 			this.numericUpDown_samplesPerPixel.Enabled = true;
 
 			var track = this.SelectedTrack;
@@ -466,17 +410,24 @@ namespace AsynCLAudio.Forms
 
 			this.numericUpDown_initialBpm.Value = (decimal) Math.Max((float) this.numericUpDown_initialBpm.Minimum, (float) (track.Bpm));
 
-			this.button_export.Enabled = true;
-			this.button_playback.Enabled = true;
-
-			if (track.OnDevice)
+			if (track.IsProcessing)
 			{
-				this.numericUpDown_chunkSize.Value = track.ChunkSize;
 				this.numericUpDown_chunkSize.Enabled = false;
-				this.numericUpDown_overlap.Value = (decimal) track.OverlapSize / track.ChunkSize;
 				this.numericUpDown_overlap.Enabled = false;
 				this.button_export.Enabled = false;
 				this.button_playback.Enabled = false;
+				this.button_stretch.Enabled = false;
+				this.comboBox_stretchKernels.Enabled = false;
+			}
+			else
+			{
+				this.button_export.Enabled = true;
+				this.button_playback.Enabled = true;
+				this.numericUpDown_chunkSize.Enabled = true;
+				this.numericUpDown_overlap.Enabled = true;
+				this.button_stretch.Enabled = true;
+				this.button_reset.Enabled = true;
+				this.comboBox_stretchKernels.Enabled = true;
 			}
 		}
 
@@ -775,7 +726,11 @@ namespace AsynCLAudio.Forms
 
 				// Add track to bag
 				selectedTracks.Add(track);
-				
+
+				track.IsProcessing = true;
+				this.FillTracksListBox();
+				this.UpdateInfoView();
+
 
 				// Skip if bpm is same or matches (*2 or /2)
 				if (track.Bpm == (float) this.numericUpDown_targetBpm.Value ||
@@ -824,16 +779,6 @@ namespace AsynCLAudio.Forms
 				this.UpdateInfoView();
 				this.Log($"Successfully stretched '{track.Name}'", $"{track.ElapsedProcessingTime:F1} ms elapsed");
 
-				// Reset progress bar
-				if (this.progressBar_processing.InvokeRequired)
-				{
-					this.progressBar_processing.Invoke(new Action(() => this.progressBar_processing.Value = 0));
-				}
-				else
-				{
-					this.progressBar_processing.Value = 0;
-				}
-
 				// Optionally: Export all processed tracks
 				if (this.checkBox_autoExport.Checked)
 				{
@@ -848,6 +793,18 @@ namespace AsynCLAudio.Forms
 						this.Log("Export error", $"Failed to export '{track.Name}': {ex.Message}", true);
 					}
 				}
+
+				// Reset progress bar
+				if (this.progressBar_processing.InvokeRequired)
+				{
+					this.progressBar_processing.Invoke(new Action(() => this.progressBar_processing.Value = 0));
+				}
+				else
+				{
+					this.progressBar_processing.Value = 0;
+				}
+
+				track.IsProcessing = false;
 			}
 
 			// Log total processed tracks + time
@@ -855,6 +812,9 @@ namespace AsynCLAudio.Forms
 			long totalTime = (long) selectedTracks.Sum(t => t.ElapsedProcessingTime);
 			double totalSeconds = totalTime / 1000.0;
 			this.Log($"Total processed tracks: {count}, Total processing time: {totalSeconds:F1} seconds");
+
+			this.FillTracksListBox();
+			this.UpdateInfoView();
 
 			// Play windows complement sound
 			if (!AudioRecorder.IsRecording)
@@ -998,7 +958,7 @@ namespace AsynCLAudio.Forms
 				return;
 			}
 
-			string name = this.SelectedTrack.Name.Replace("▶ ", string.Empty).Trim();
+			string name = this.SelectedTrack.Name.Replace("▶ ", string.Empty).Replace("|| ", "").Trim();
 
 			if (this.SelectedTrack.Playing)
 			{
@@ -1091,9 +1051,6 @@ namespace AsynCLAudio.Forms
 
 			var track = this.SelectedTrack;
 
-			// Get ctrl flag
-			bool ctrlPressed = (ModifierKeys & Keys.Control) == Keys.Control;
-
 			// Stop playback if running
 			if (track.Playing)
 			{
@@ -1103,9 +1060,11 @@ namespace AsynCLAudio.Forms
 				this.Log("Playback stopped ■", this.SelectedTrack.Name);
 			}
 
-			// Unselect track to prevent operations on it while processing + disable listbox
-			int selectedIndex = this.listBox_tracks.SelectedIndex;
-			this.listBox_tracks.SelectedIndex = -1;
+			track.UpdateBpm((float) this.numericUpDown_initialBpm.Value);
+			track.IsProcessing = true;
+
+			this.FillTracksListBox();
+			this.UpdateInfoView();
 
 			double factor = (double) this.numericUpDown_stretchFactor.Value;
 			int chunkSize = (int) this.numericUpDown_chunkSize.Value;
@@ -1134,9 +1093,6 @@ namespace AsynCLAudio.Forms
 			// Call time stretch
 			var result = await this.openClService.TimeStretch(track, kernelName, "", factor, chunkSize, overlap, progressHandler);
 
-			// Update info
-			this.UpdateInfoView();
-
 			// Reset progress bar
 			if (this.progressBar_processing.InvokeRequired)
 			{
@@ -1163,16 +1119,21 @@ namespace AsynCLAudio.Forms
 				this.Log($"Exported '{track.Name}' to {outputDir}");
 			}
 
-			// Re-enable listbox + select previous track
-			if (selectedIndex >= 0 && selectedIndex < this.listBox_tracks.Items.Count)
-			{
-				this.listBox_tracks.SelectedIndex = selectedIndex;
-			}
+			track.IsProcessing = false;
 
 			// Play windows complement sound
 			System.Media.SystemSounds.Asterisk.Play();
 
 			this.Log("Successfully stretched '" + track.Name + "'", track.ElapsedProcessingTime.ToString("F1") + " ms elapsed");
+
+			// Play windows complement sound
+			if (!AudioRecorder.IsRecording)
+			{
+				System.Media.SystemSounds.Asterisk.Play();
+			}
+
+			this.FillTracksListBox();
+			this.UpdateInfoView();
 		}
 
 		private async void button_reset_Click(object sender, EventArgs e)
@@ -1221,7 +1182,7 @@ namespace AsynCLAudio.Forms
 
 		private async void vScrollBar_volumeTrack_Scroll(object sender, ScrollEventArgs e)
 		{
-			int masterValue = this.vScrollBar_trackVolume.Value;
+			int masterValue = this.vScrollBar_masterVolume.Value;
 			float masterVolume = 1.0f - masterValue / 100f;
 
 			int value = this.vScrollBar_trackVolume.Value;
@@ -1231,6 +1192,9 @@ namespace AsynCLAudio.Forms
 			{
 				await this.SelectedTrack.SetVolume(volume * masterVolume);
 			}
+
+			this.FillTracksListBox();
+			this.UpdateInfoView();
 		}
 
 		private async void button_normalize_Click(object sender, EventArgs e)
@@ -1370,16 +1334,20 @@ namespace AsynCLAudio.Forms
 					// Restart playback timer
 					this.playbackTimer.Start();
 					this.button_pause.Text = "||";
-					this.Log("Playback paused ||", this.SelectedTrack.Name.Replace("▶ ", ""));
+					this.Log("Playback resumed ▶", this.SelectedTrack.Name.Replace("▶ ", "").Replace("|| ", ""));
 				}
 				else
 				{
 					this.playbackTimer.Stop();
 					this.button_pause.Text = "▶";
-					this.Log("Playback resumed ▶", this.SelectedTrack.Name.Replace("▶ ", ""));
+					this.Log("Playback paused ||", this.SelectedTrack.Name.Replace("▶ ", "").Replace("|| ", ""));
 				}
 
 				await this.SelectedTrack.Pause();
+
+				// Update info view
+				this.UpdateInfoView();
+				this.FillTracksListBox();
 			}
 		}
 
@@ -1459,8 +1427,9 @@ namespace AsynCLAudio.Forms
 				{
 					fps = 144;
 				}
-
+				this.playbackTimer.Stop();
 				this.playbackTimer.Interval = 1000 / fps;
+				this.playbackTimer.Start();
 			}
 			finally
 			{
@@ -1649,9 +1618,12 @@ namespace AsynCLAudio.Forms
 
 		private async void vScrollBar_masterVolume_Scroll(object sender, ScrollEventArgs e)
 		{
-			int percentage = 100 - this.vScrollBar_masterVolume.Value;
+			float percentage = (100f - (float) this.vScrollBar_masterVolume.Value) / 100f;
 
 			await this.audioCollection.SetMasterVolume(percentage);
+
+			this.FillTracksListBox();
+			this.UpdateInfoView();
 		}
 	}
 }
