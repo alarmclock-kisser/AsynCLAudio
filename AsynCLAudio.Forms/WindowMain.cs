@@ -718,6 +718,8 @@ namespace AsynCLAudio.Forms
 				this.UpdateInfoView();
 				this.Log($"Successfully stretched '{track.Name}'", $"{track.ElapsedProcessingTime:F1} ms elapsed");
 
+				track.IsProcessing = false;
+
 				// Optionally: Export all processed tracks
 				if (this.checkBox_autoExport.Checked)
 				{
@@ -743,9 +745,7 @@ namespace AsynCLAudio.Forms
 					this.progressBar_processing.Value = 0;
 				}
 
-				progressBar_batch.Invoke(new Action(() => progressBar_batch.Increment(1)));
-
-				track.IsProcessing = false;
+				this.progressBar_batch.Invoke(new Action(() => this.progressBar_batch.Increment(1)));
 			}
 
 			// Reset progress bar
