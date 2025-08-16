@@ -22,7 +22,7 @@ namespace AsynCLAudio.Core
 		public Guid Id { get; private set; } = Guid.Empty;
 		public DateTime CreatedAt { get; private set; } = DateTime.Now;
 		public string FilePath { get; set; } = string.Empty;
-		public string Name => (this.IsProcessing ? "~Processing~ " : "") + ((this.player.PlaybackState == PlaybackState.Playing) ? "▶ " : this.player.PlaybackState == PlaybackState.Paused ? "|| " : "") + Path.GetFileNameWithoutExtension(this.FilePath) + $" ({this.Volume}%)";
+		public string Name => (this.IsProcessing ? "~Processing~ " : "") + ((this.player.PlaybackState == PlaybackState.Playing) ? "▶ " : this.player.PlaybackState == PlaybackState.Paused ? "|| " : "") + Path.GetFileNameWithoutExtension(this.FilePath);
 
 		public float[] Data { get; private set; } = [];
 		private int originalSampleRate = 0;

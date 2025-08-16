@@ -484,6 +484,7 @@ namespace AsynCLAudio.Forms
 			// 
 			// comboBox_captureDevices
 			// 
+			this.comboBox_captureDevices.Enabled = false;
 			this.comboBox_captureDevices.FormattingEnabled = true;
 			this.comboBox_captureDevices.Location = new Point(12, 41);
 			this.comboBox_captureDevices.Name = "comboBox_captureDevices";

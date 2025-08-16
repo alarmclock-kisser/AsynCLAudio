@@ -21,9 +21,9 @@ namespace AsynCLAudio.Forms
 		private bool isProcessing = false;
 		private Dictionary<NumericUpDown, long> previousNumericValues = [];
 
-		private CancellationToken? playbackCancellationToken;
 		private float Volume => 1.0f - this.vScrollBar_trackVolume.Value / 100f;
-		private System.Timers.Timer playbackTimer = new(50);
+		private CancellationTokenSource? playbackCancellationToken;
+		private System.Threading.Timer? playbackTimer;
 		private Color graphHue = Color.Red;
 
 		private bool recording = false;
@@ -55,29 +55,11 @@ namespace AsynCLAudio.Forms
 			this.listBox_tracks.SelectedValueChanged += this.ListBoxTracks_SelectedValueChanged;
 			this.recordingTimer.Elapsed += this.RecordingTimer_Elapsed;
 			this.listBox_log.DoubleClick += this.listBox_log_DoubleClick;
-			this.button_playback.MouseEnter += this.button_playback_MouseEnter;
+			// this.button_playback.MouseEnter += this.button_playback_MouseEnter;
 			this.vScrollBar_masterVolume.ValueChanged += (sender, e) => this.UpdateVolumeLabels();
 			this.vScrollBar_trackVolume.ValueChanged += (sender, e) => this.UpdateVolumeLabels();
 			this.pictureBox_waveform.MouseWheel += this.pictureBox_waveform_MouseWheel;
 			this.FillDevicesComboBox(2);
-			this.comboBox_captureDevices.Items.AddRange(AudioRecorder.GetCaptureDevices());
-			var standardCaptureDevice = AudioRecorder.GetDefaultPlaybackDevice();
-			if (standardCaptureDevice != null)
-			{
-				this.comboBox_captureDevices.SelectedItem = standardCaptureDevice;
-			}
-			else if (this.comboBox_captureDevices.Items.Count > 0)
-			{
-				this.comboBox_captureDevices.SelectedIndex = 0;
-			}
-			this.comboBox_captureDevices.SelectedIndexChanged += (sender, e) =>
-			{
-				if (this.comboBox_captureDevices.SelectedItem is MMDevice device)
-				{
-					AudioRecorder.SetCaptureDevice(device);
-					this.Log("Set capture device", device.FriendlyName);
-				}
-			};
 			this.UpdateInfoView();
 		}
 
@@ -91,8 +73,7 @@ namespace AsynCLAudio.Forms
 				this.button_record.PerformClick();
 			}
 
-			this.playbackTimer.Stop();
-			this.playbackTimer.Elapsed -= (sender, e) => this.UpdateWaveform().GetAwaiter().GetResult();
+			this.playbackTimer?.Dispose();
 
 			this.disposing = true;
 
@@ -161,7 +142,7 @@ namespace AsynCLAudio.Forms
 			{
 				string name = this.SelectedTrack.Name;
 				this.SelectedTrack.Stop();
-				this.playbackTimer.Stop();
+				this.playbackTimer?.Dispose();
 				this.button_playback.Text = "▶";
 				this.Log("Playback stopped ■", name);
 			}
@@ -345,7 +326,18 @@ namespace AsynCLAudio.Forms
 			this.vScrollBar_trackVolume.Value = (100 - this.SelectedTrack?.Volume) ?? 100;
 			if (this.SelectedTrack != null && this.SelectedTrack.Playing)
 			{
-				this.playbackTimer.Start();
+				this.playbackTimer?.Dispose();
+				this.playbackTimer = new System.Threading.Timer(async _ =>
+				{
+					if (this.disposing || this.IsDisposed || !this.IsHandleCreated)
+					{
+						return;
+					}
+					if (this.SelectedTrack?.Playing == true)
+					{
+						await this.UpdateWaveform();
+					}
+				}, null, 0, 1000 / (int) this.numericUpDown_fps.Value);
 			}
 		}
 
@@ -389,7 +381,18 @@ namespace AsynCLAudio.Forms
 			}
 			else if (track.Playing)
 			{
-				this.playbackTimer.Start();
+				this.playbackTimer?.Dispose();
+				this.playbackTimer = new System.Threading.Timer(async _ =>
+				{
+					if (this.disposing || this.IsDisposed || !this.IsHandleCreated)
+					{
+						return;
+					}
+					if (track.Playing)
+					{
+						await this.UpdateWaveform();
+					}
+				}, null, 0, 100);
 			}
 
 			// Fill time stretch kernels
@@ -626,7 +629,6 @@ namespace AsynCLAudio.Forms
 			};
 		}
 
-		// Method to register labels data binding (text) to a field
 		private void UpdateVolumeLabels()
 		{
 			// Set initial values
@@ -647,8 +649,8 @@ namespace AsynCLAudio.Forms
 			}
 
 			// Progress handler for progress bar batch
-			progressBar_batch.Value = 0;
-			progressBar_batch.Maximum = this.audioCollection.Tracks.Count;
+			this.progressBar_batch.Value = 0;
+			this.progressBar_batch.Maximum = this.audioCollection.Tracks.Count;
 
 			ConcurrentBag<AudioObj> selectedTracks = [];
 
@@ -704,7 +706,7 @@ namespace AsynCLAudio.Forms
 				if (track.Playing)
 				{
 					track.Stop();
-					this.playbackTimer.Stop();
+					this.playbackTimer?.Dispose();
 					this.button_playback.Text = "▶";
 					this.Log("Playback stopped ■", track.Name);
 				}
@@ -874,7 +876,7 @@ namespace AsynCLAudio.Forms
 				}
 
 				Application.DoEvents();
-				System.Threading.Thread.Sleep(50);
+				System.Threading.Thread.Sleep(100);
 			}
 
 			// Reset ForeColor to default
@@ -888,8 +890,9 @@ namespace AsynCLAudio.Forms
 			// If CTRL down stop all
 			if ((ModifierKeys & Keys.Control) == Keys.Control)
 			{
-				this.audioCollection.StopAll(true);
-
+				this.audioCollection.StopAll(this.checkBox_removeAfterPlayback.Checked);
+				this.playbackTimer?.Dispose();
+				this.playbackTimer = null;
 
 				this.FillTracksListBox();
 				this.UpdateInfoView();
@@ -906,41 +909,32 @@ namespace AsynCLAudio.Forms
 
 			if (this.SelectedTrack.Playing)
 			{
-				this.playbackTimer.Stop();
+				this.playbackTimer?.Dispose();
+				this.playbackTimer = null;
 				this.SelectedTrack.Stop();
-				this.playbackTimer.Elapsed -= (sender, e) => this.UpdateWaveform().Wait();
 				this.Log("Playback stopped ■", name);
-
 
 				if (this.checkBox_removeAfterPlayback.Checked)
 				{
-					// Remove track from collection
 					this.Log("Removing track after playback", name);
 					await this.audioCollection.RemoveAsync(this.SelectedTrack);
 				}
 			}
 			else
 			{
-				this.playbackTimer.Elapsed += (sender, e) => this.UpdateWaveform().GetAwaiter().GetResult();
-				this.playbackTimer.Start();
-				this.playbackCancellationToken = new();
-				await this.SelectedTrack.Play(this.playbackCancellationToken.Value, null, this.Volume);
-				this.button_playback.Text = "■";
+				this.playbackCancellationToken = new CancellationTokenSource();
+				this.playbackTimer = new System.Threading.Timer(
+					async _ => await this.UpdateWaveform(),
+					null,
+					0, 1000 / (int) this.numericUpDown_fps.Value);
 
+				await this.SelectedTrack.Play(this.playbackCancellationToken.Token, null, this.Volume);
+				this.button_playback.Text = "■";
 				this.Log("Playback started ▶", name);
 			}
 
 			this.FillTracksListBox();
 			this.UpdateInfoView();
-
-			/*if (this.SelectedTrack != null && this.SelectedTrack.Playing)
-			{
-				this.button_playback.Text = "▶";
-			}
-			else
-			{
-				this.button_playback.Text = "■";
-			}*/
 		}
 
 		private void numericUpDown_initialBpm_ValueChanged(object sender, EventArgs e)
@@ -999,7 +993,7 @@ namespace AsynCLAudio.Forms
 			if (track.Playing)
 			{
 				track.Stop();
-				this.playbackTimer.Stop();
+				this.playbackTimer?.Dispose();
 				this.button_playback.Text = "▶";
 				this.Log("Playback stopped ■", this.SelectedTrack.Name);
 			}
@@ -1030,12 +1024,12 @@ namespace AsynCLAudio.Forms
 				}
 			});
 
-			await track.Normalize();
-
 			this.Log("Started stretching (" + kernelName + ")", (int) (max / 6) + " chunks, " + track.SizeInMb.ToString("F1") + " MB");
 
 			// Call time stretch
 			var result = await this.openClService.TimeStretch(track, kernelName, "", factor, chunkSize, overlap, progressHandler);
+
+			track.IsProcessing = false;
 
 			// Reset progress bar
 			if (this.progressBar_processing.InvokeRequired)
@@ -1062,8 +1056,6 @@ namespace AsynCLAudio.Forms
 
 				this.Log($"Exported '{track.Name}' to {outputDir}");
 			}
-
-			track.IsProcessing = false;
 
 			// Play windows complement sound
 			System.Media.SystemSounds.Asterisk.Play();
@@ -1092,7 +1084,7 @@ namespace AsynCLAudio.Forms
 			if (this.SelectedTrack.Playing)
 			{
 				this.SelectedTrack.Stop();
-				this.playbackTimer.Stop();
+				this.playbackTimer?.Dispose();
 				this.button_playback.Text = "▶";
 				this.Log("Playback stopped ■", this.SelectedTrack.Name);
 			}
@@ -1153,7 +1145,7 @@ namespace AsynCLAudio.Forms
 			if (this.SelectedTrack.Playing)
 			{
 				this.SelectedTrack.Stop();
-				this.playbackTimer.Stop();
+				this.playbackTimer?.Dispose();
 				this.button_playback.Text = "▶";
 				this.Log("Playback stopped ■", this.SelectedTrack.Name);
 			}
@@ -1221,6 +1213,8 @@ namespace AsynCLAudio.Forms
 					// Start recording
 					AudioRecorder.StartRecording(fileName, selectedDevice);
 				});
+
+				this.comboBox_captureDevices.Text = AudioRecorder.CaptureDeviceName ?? AudioRecorder.MMDeviceName ?? "Default device";
 			}
 			else
 			{
@@ -1245,7 +1239,7 @@ namespace AsynCLAudio.Forms
 					AudioRecorder.StopRecording();
 				});
 
-				this.comboBox_captureDevices.Enabled = true;
+				// this.comboBox_captureDevices.Enabled = true;
 			}
 
 			this.recording = !this.recording;
@@ -1276,13 +1270,16 @@ namespace AsynCLAudio.Forms
 				if (this.SelectedTrack.Paused)
 				{
 					// Restart playback timer
-					this.playbackTimer.Start();
+					this.playbackTimer = new System.Threading.Timer(
+						async _ => await this.UpdateWaveform(),
+						null,
+						0, 1000 / (int) this.numericUpDown_fps.Value);
 					this.button_pause.Text = "||";
 					this.Log("Playback resumed ▶", this.SelectedTrack.Name.Replace("▶ ", "").Replace("|| ", ""));
 				}
 				else
 				{
-					this.playbackTimer.Stop();
+					this.playbackTimer?.Dispose();
 					this.button_pause.Text = "▶";
 					this.Log("Playback paused ||", this.SelectedTrack.Name.Replace("▶ ", "").Replace("|| ", ""));
 				}
@@ -1371,9 +1368,11 @@ namespace AsynCLAudio.Forms
 				{
 					fps = 144;
 				}
-				this.playbackTimer.Stop();
-				this.playbackTimer.Interval = 1000 / fps;
-				this.playbackTimer.Start();
+				this.playbackTimer?.Dispose();
+				this.playbackTimer = new System.Threading.Timer(
+					async _ => await this.UpdateWaveform(),
+					null,
+					0, 1000 / fps); // Start immediately, then every 1000/fps ms
 			}
 			finally
 			{
