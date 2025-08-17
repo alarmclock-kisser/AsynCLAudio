@@ -79,6 +79,8 @@ namespace AsynCLAudio.Forms
 			this.hScrollBar_looping = new HScrollBar();
 			this.label_info_looping = new Label();
 			this.button_loop = new Button();
+			this.label_detectedBeat = new Label();
+			this.checkBox_detect = new CheckBox();
 			((System.ComponentModel.ISupportInitialize) this.pictureBox_waveform).BeginInit();
 			((System.ComponentModel.ISupportInitialize) this.audioCollectionBindingSource).BeginInit();
 			((System.ComponentModel.ISupportInitialize) this.numericUpDown_chunkSize).BeginInit();
@@ -650,12 +652,34 @@ namespace AsynCLAudio.Forms
 			this.button_loop.UseVisualStyleBackColor = true;
 			this.button_loop.Click += this.button_loop_Click;
 			// 
+			// label_detectedBeat
+			// 
+			this.label_detectedBeat.AutoSize = true;
+			this.label_detectedBeat.Location = new Point(12, 84);
+			this.label_detectedBeat.Name = "label_detectedBeat";
+			this.label_detectedBeat.Size = new Size(129, 15);
+			this.label_detectedBeat.TabIndex = 57;
+			this.label_detectedBeat.Text = "Detected beat: 0.0 BPM";
+			// 
+			// checkBox_detect
+			// 
+			this.checkBox_detect.AutoSize = true;
+			this.checkBox_detect.Location = new Point(166, 77);
+			this.checkBox_detect.Name = "checkBox_detect";
+			this.checkBox_detect.Size = new Size(60, 19);
+			this.checkBox_detect.TabIndex = 58;
+			this.checkBox_detect.Text = "Detect";
+			this.checkBox_detect.UseVisualStyleBackColor = true;
+			this.checkBox_detect.CheckedChanged += this.checkBox_detect_CheckedChanged;
+			// 
 			// WindowMain
 			// 
 			this.AutoScaleDimensions = new SizeF(7F, 15F);
 			this.AutoScaleMode = AutoScaleMode.Font;
 			this.BackColor = SystemColors.ControlLight;
 			this.ClientSize = new Size(704, 801);
+			this.Controls.Add(this.checkBox_detect);
+			this.Controls.Add(this.label_detectedBeat);
 			this.Controls.Add(this.button_loop);
 			this.Controls.Add(this.label_info_looping);
 			this.Controls.Add(this.hScrollBar_looping);
@@ -793,5 +817,7 @@ namespace AsynCLAudio.Forms
 		private HScrollBar hScrollBar_looping;
 		private Label label_info_looping;
 		private Button button_loop;
+		private Label label_detectedBeat;
+		private CheckBox checkBox_detect;
 	}
 }

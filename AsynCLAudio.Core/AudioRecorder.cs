@@ -9,36 +9,59 @@ public static class AudioRecorder
 {
 	private static WasapiLoopbackCapture? _capture;
 	private static MMDevice? _mmDevice;
-	public static string CaptureDeviceName => _capture?.WaveFormat.Encoding.ToString() ?? "N/A";
+	public static string CaptureDeviceName => _capture?.WaveFormat.ToString() ?? "N/A";
 	public static string MMDeviceName => _mmDevice?.FriendlyName ?? "N/A";
 	private static WaveFileWriter? _writer;
 
 	public static bool IsRecording { get; private set; } = false;
 	public static string? RecordedFile { get; private set; } = null;
 
+	public static float EstimatedBpm => GetPeaksPerMinute();
+	private static readonly List<DateTime> _peakHits = [];
+	private static readonly object _peakLock = new();
+	private static float peakThreshold = 0.95f;
+	public static float PeakThreshold
+	{
+		get => peakThreshold;
+		set
+		{
+			value = Math.Clamp(value, 0.0f, 1.0f);
+
+			if (peakThreshold != value)
+			{
+				// Reset hits
+				_peakHits.Clear();
+				Console.WriteLine($"Pegelgrenze auf {value} gesetzt.");
+			}
+
+			peakThreshold = value;
+		}
+	}
+
 	public static float GetPeakVolume(MMDevice? useDevice = null)
 	{
-		if (useDevice != null)
-		{
-			try
-			{
-				return useDevice.AudioMeterInformation.MasterPeakValue;
-			}
-			catch (Exception ex)
-			{
-				Console.WriteLine($"Fehler beim Abrufen der Lautstärke: {ex.Message}");
-				return 0.0f;
-			}
-		}
-
-		if (_mmDevice == null)
-		{
-			Console.WriteLine("Kein Gerät ausgewählt.");
-			return 0.0f;
-		}
 		try
 		{
-			return _mmDevice.AudioMeterInformation.MasterPeakValue;
+			// Nimm übergebenes Gerät oder Standardgerät
+			MMDevice? device = useDevice ?? GetDefaultPlaybackDevice();
+			if (device == null)
+			{
+				Console.WriteLine("Kein Gerät ausgewählt.");
+				return 0.0f;
+			}
+
+			// Mit LoopbackCapture initialisieren (wie in StartRecording)
+			using var capture = new WasapiLoopbackCapture(device);
+
+			// Kurze Initialisierung, aber kein echtes Recording starten
+			var format = capture.WaveFormat;
+
+			float value = device.AudioMeterInformation.MasterPeakValue;
+
+			CheckPeakHit(value);
+
+			// Pegel über AudioMeterInformation abrufen
+			return value;
 		}
 		catch (Exception ex)
 		{
@@ -46,6 +69,47 @@ public static class AudioRecorder
 			return 0.0f;
 		}
 	}
+
+	private static void CheckPeakHit(float value)
+	{
+		if (value >= PeakThreshold)
+		{
+			lock (_peakLock)
+			{
+				// Add hit if last hit is older than 200ms
+				if (_peakHits.Count == 0 || (DateTime.UtcNow - _peakHits.Last()).TotalMilliseconds > 200)
+				{
+					_peakHits.Add(DateTime.UtcNow);
+				}
+
+				// Alte Einträge (älter als 60s) entfernen
+				_peakHits.RemoveAll(t => (DateTime.UtcNow - t).TotalSeconds > 60);
+			}
+		}
+	}
+
+	public static float GetPeaksPerMinute()
+	{
+		lock (_peakLock)
+		{
+			if (_peakHits.Count < 2)
+			{
+				return 0.0f;
+			}
+
+			// Zeitspanne zwischen erstem und letztem Hit in Sekunden
+			double spanSeconds = (_peakHits.Last() - _peakHits.First()).TotalSeconds;
+			if (spanSeconds <= 0.0)
+			{
+				return 0.0f;
+			}
+
+			// Rate auf Minuten hochgerechnet
+			double rate = (_peakHits.Count - 1) / spanSeconds * 60.0;
+			return (float) rate;
+		}
+	}
+
 
 	public static void StartRecording(string filePath, MMDevice? mmDevice = null)
 	{
@@ -75,6 +139,7 @@ public static class AudioRecorder
 
 			_capture.StartRecording();
 			IsRecording = true;
+			_mmDevice = captureDevice ?? GetDefaultPlaybackDevice();
 			Console.WriteLine($"Aufnahme gestartet. Gerät: {captureDevice?.FriendlyName ?? "Standard"}");
 		}
 		catch (Exception ex)
@@ -84,9 +149,6 @@ public static class AudioRecorder
 		}
 	}
 
-	/// <summary>
-	/// Stoppt die laufende Aufnahme.
-	/// </summary>
 	public static void StopRecording()
 	{
 		if (!IsRecording)

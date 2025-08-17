@@ -58,7 +58,7 @@ namespace AsynCLAudio.Core
 		public int Volume => (int) (this._currentVolume * 100.0f);
 		private WaveOutEvent player = new();
 		private WaveStream? waveStream;
-		public object playerLock = new object();
+		public object playerLock = new();
 
 		public bool PlayerPlaying => this.player != null && this.player.PlaybackState == PlaybackState.Playing;
 		public bool Playing = false;
@@ -68,28 +68,19 @@ namespace AsynCLAudio.Core
 		private double positionSeconds => this.SampleRate <= 0 ? 0 : (double) this.position / this.SampleRate;
 		public TimeSpan CurrentTime => TimeSpan.FromSeconds(this.positionSeconds);
 
+		public int SilenceStart { get; private set; } = 0;
+
 		private CancellationTokenSource _loopCts = new();
 		private float _currentLoopValue = 0.0f;
 		private bool _isLooping;
 		private long loopStart = 0;
 		public float Looping => this._isLooping ? this._currentLoopValue : 0;
 
-		private System.Timers.Timer waveformUpdateTimer;
-		private int refreshRateHz = 30;
-		public int RefreshRateHz
-		{
-			get => this.refreshRateHz;
-			set => this.SetupTimer(value);
-		}
-		public System.Drawing.Size WaveformSize { get; set; } = new System.Drawing.Size(800, 200);
-		public SixLabors.ImageSharp.Image WaveformImage { get; private set; } = new Image<Rgba32>(800, 200);
-
 		public AudioObj(string filePath, bool linearLoad = false, int fps = 20)
 		{
 			this.Id = Guid.NewGuid();
 			this.FilePath = filePath;
 
-			this.waveformUpdateTimer = this.SetupTimer(fps);
 			this.ReadBpmTag();
 
 			if (this.Data.LongLength <= 0 && linearLoad)
@@ -203,58 +194,6 @@ namespace AsynCLAudio.Core
 			return obj;
 		}
 
-		public async Task ReloadAsync(int maxWorkers = -2)
-		{
-			Stopwatch sw = Stopwatch.StartNew();
-
-			using var mainReader = new AudioFileReader(this.FilePath);
-
-			this.originalSampleRate = mainReader.WaveFormat.SampleRate;
-			this.Channels = mainReader.WaveFormat.Channels;
-			this.BitDepth = mainReader.WaveFormat.BitsPerSample;
-
-			long totalBytes = mainReader.Length;
-
-			// Total length float[] (Data)
-			int dataLengthInFloats = (int) totalBytes / sizeof(float);
-			this.Data = new float[dataLengthInFloats];
-
-			// Worker count
-			int workerCount = CommonStatics.AdjustWorkersCount(maxWorkers);
-			int floatsPerWorker = dataLengthInFloats / workerCount;
-			var tasks = new List<Task>();
-
-			for (int i = 0; i < workerCount; i++)
-			{
-				int startFloatIndex = i * floatsPerWorker;
-				int floatsToRead = (i == workerCount - 1) ? dataLengthInFloats - startFloatIndex : floatsPerWorker;
-
-				tasks.Add(Task.Run(() =>
-				{
-					// Each worker gets a new reader for thread safety
-					using var workerReader = new AudioFileReader(this.FilePath);
-
-					// Set start position in bytes
-					workerReader.Position = startFloatIndex * sizeof(float);
-
-					// KORREKTUR: Verwende einen float[]-Puffer
-					var floatBuffer = new float[floatsToRead];
-
-					// KORREKTUR: Verwende die korrekte Read-Methode für float[]
-					int readFloats = workerReader.Read(floatBuffer, 0, floatsToRead);
-
-					// Write to Data
-					Array.Copy(floatBuffer, 0, this.Data, startFloatIndex, readFloats);
-				}));
-			}
-
-			// Wait for all to finish
-			await Task.WhenAll(tasks);
-
-			sw.Stop();
-			this.ElapsedLoadingTime = (float) sw.Elapsed.TotalMilliseconds;
-		}
-
 		public float ReadBpmTag(string tag = "TBPM", bool set = true)
 		{
 			// Read bpm metadata if available
@@ -363,28 +302,6 @@ namespace AsynCLAudio.Core
 		public void UpdateBpm(float newValue = 0.0f)
 		{
 			this.Bpm = newValue;
-		}
-
-		private System.Timers.Timer SetupTimer(int hz = 100)
-		{
-			hz = Math.Clamp(hz, 1, 144);
-			this.refreshRateHz = hz;
-
-			var timer = new System.Timers.Timer(1000.0 / hz);
-
-			// Register tick event
-			timer.Elapsed += (sender, e) =>
-			{
-				if (this.Data != null && this.Data.Length > 0)
-				{
-					this.WaveformImage = this.GetWaveformImageAsync(this.Data, this.WaveformSize.Width, this.WaveformSize.Height).Result;
-				}
-			};
-
-			timer.AutoReset = false;
-			timer.Enabled = true;
-
-			return timer;
 		}
 
 		public async Task<byte[]> GetBytesAsync(int maxWorkers = -2)
@@ -657,7 +574,6 @@ namespace AsynCLAudio.Core
 			bool paused = false;
 			if (this.player != null && this.player.PlaybackState != PlaybackState.Paused)
 			{
-				this.waveformUpdateTimer.Stop();
 				this.player?.Stop();
 				this.player?.Dispose();
 				this.waveStream?.Dispose();
@@ -711,7 +627,6 @@ namespace AsynCLAudio.Core
 				using (cancellationToken.Register(() =>
 				{
 					this.player?.Stop();
-					this.waveformUpdateTimer.Stop();
 				}))
 				{
 					// Start playback in background
@@ -788,7 +703,6 @@ namespace AsynCLAudio.Core
 		{
 			this.Playing = false;
 			this.Paused = false;
-			this.waveformUpdateTimer.Stop();
 			this.waveStream?.Dispose();
 			this.player.Stop();
 		}
@@ -881,127 +795,6 @@ namespace AsynCLAudio.Core
 
 			// Optionally, normalize the entire audio data to ensure no clipping occurs
 			await this.Normalize(maxAmplitude: 1.0f).ConfigureAwait(false);
-		}
-
-		public async Task<Image<Rgba32>> GetWaveformImageAsync(float[]? data, int width = 720, int height = 480,
-			int samplesPerPixel = 128, float amplifier = 1.0f, long offset = 0,
-			SixLabors.ImageSharp.Color? graphColor = null, SixLabors.ImageSharp.Color? backgroundColor = null, bool smoothEdges = true, int workerCount = -2)
-		{
-			// Normalize image dimensions
-			width = Math.Max(100, width);
-			height = Math.Max(100, height);
-
-			// Normalize colors & get rgba values
-			graphColor ??= SixLabors.ImageSharp.Color.BlueViolet;
-			backgroundColor ??= SixLabors.ImageSharp.Color.White;
-
-			// New result image + color fill
-			Image<Rgba32> image = new(width, height);
-			await Task.Run(() =>
-			{
-				image.Mutate(ctx => ctx.BackgroundColor(backgroundColor.Value));
-			});
-
-			// Verify data
-			data ??= this.Data;
-			if (data == null || data.LongLength <= 0)
-			{
-				return image;
-			}
-
-			// Adjust offset if necessary
-			if (data.Length <= offset)
-			{
-				offset = 0;
-			}
-
-			workerCount = CommonStatics.AdjustWorkersCount(workerCount);
-
-			// Calculate the number of samples to process -> take array from data
-			long totalSamples = Math.Min(data.Length - offset, width * samplesPerPixel);
-			if (totalSamples <= 0)
-			{
-				return image;
-			}
-
-			float[] samples = new float[totalSamples];
-			Array.Copy(data, offset, samples, 0, totalSamples);
-
-			// Split into concurrent chunks for each worker (even count, last chunk fills up with zeros)
-			int chunkSize = (int) Math.Ceiling((double) totalSamples / workerCount);
-			ConcurrentDictionary<int, float[]> chunks = await Task.Run(() =>
-			{
-				ConcurrentDictionary<int, float[]> chunkDict = new();
-				Parallel.For(0, workerCount, i =>
-				{
-					int start = i * chunkSize;
-					int end = Math.Min(start + chunkSize, (int) totalSamples);
-					if (start < totalSamples)
-					{
-						float[] chunk = new float[chunkSize];
-						Array.Copy(samples, start, chunk, 0, end - start);
-						chunkDict[i] = chunk;
-					}
-				});
-				return chunkDict;
-			});
-
-			// Draw each chunk at the corresponding position with amplification per worker on bitmap
-			Parallel.ForEach(chunks, parallelOptions: new ParallelOptions { MaxDegreeOfParallelism = workerCount }, kvp =>
-			{
-				int workerIndex = kvp.Key;
-				float[] chunk = kvp.Value;
-				int xStart = workerIndex * (width / workerCount);
-				int xEnd = (workerIndex + 1) * (width / workerCount);
-				if (xEnd > width)
-				{
-					xEnd = width;
-				}
-				for (int x = xStart; x < xEnd; x++)
-				{
-					int sampleIndex = (x - xStart) * samplesPerPixel;
-					if (sampleIndex < chunk.Length)
-					{
-						float sampleValue = chunk[sampleIndex] * amplifier;
-						int yPos = (int) ((sampleValue + 1.0f) / 2.0f * height);
-						yPos = Math.Clamp(yPos, 0, height - 1);
-
-						// Draw vertical line for this sample
-						for (int y = 0; y < height; y++)
-						{
-							if (y == yPos)
-							{
-								image[x, y] = graphColor.Value;
-							}
-							else
-							{
-								image[x, y] = backgroundColor.Value;
-							}
-
-							// Optionally: Apply anti-aliasing for smoother edges
-							if (smoothEdges && y > 0 && y < height - 1)
-							{
-								float edgeFactor = (float) (1.0 - Math.Abs(y - yPos) / (height / 2.0));
-								if (edgeFactor > 0.1f)
-								{
-									image[x, y] = new Rgba32(
-										(byte) (graphColor.Value.ToPixel<Rgba32>().R * edgeFactor + backgroundColor.Value.ToPixel<Rgba32>().R * (1 - edgeFactor)),
-										(byte) (graphColor.Value.ToPixel<Rgba32>().G * edgeFactor + backgroundColor.Value.ToPixel<Rgba32>().G * (1 - edgeFactor)),
-										(byte) (graphColor.Value.ToPixel<Rgba32>().B * edgeFactor + backgroundColor.Value.ToPixel<Rgba32>().B * (1 - edgeFactor)),
-										(byte) (graphColor.Value.ToPixel<Rgba32>().A * edgeFactor + backgroundColor.Value.ToPixel<Rgba32>().A * (1 - edgeFactor))
-									);
-								}
-							}
-						}
-					}
-				}
-			});
-
-			// Wait for all tasks to complete
-			await Task.Yield();
-
-			// Return the generated waveform image
-			return image;
 		}
 
 		public async Task<System.Drawing.Image?> GetWaveformImageSimpleAsync(float[]? data, int width = 720, int height = 480,
@@ -1416,5 +1209,25 @@ namespace AsynCLAudio.Core
 			this._isLooping = false;
 			this._currentLoopValue = 0;
 		}
+
+		public double GetTime(long position = -1)
+		{
+			if (position < 0)
+			{
+				position = this.position;
+			}
+			
+			if (this.SampleRate <= 0 || this.Channels <= 0)
+			{
+				return 0.0;
+			}
+
+			// Berechne die Zeit in Sekunden
+			double timeInSeconds = (double) position / (this.SampleRate * this.Channels);
+			return timeInSeconds;
+		}
+
+		
+
 	}
 }

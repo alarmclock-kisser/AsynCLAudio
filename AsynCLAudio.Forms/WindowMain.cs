@@ -26,7 +26,6 @@ namespace AsynCLAudio.Forms
 		private System.Threading.Timer? playbackTimer;
 		private Color graphHue = Color.Red;
 
-		private bool recording = false;
 		private System.Timers.Timer recordingTimer = new(120);
 		private DateTime recordingTime = DateTime.Now;
 
@@ -68,9 +67,9 @@ namespace AsynCLAudio.Forms
 		protected override void Dispose(bool disposing = true)
 		{
 			// End recording if running
-			if (this.recording)
+			if (AudioRecorder.IsRecording)
 			{
-				this.button_record.PerformClick();
+				AudioRecorder.StopRecording();
 			}
 
 			this.playbackTimer?.Dispose();
@@ -114,27 +113,7 @@ namespace AsynCLAudio.Forms
 			if (AudioRecorder.IsRecording)
 			{
 				AudioRecorder.StopRecording();
-				this.recording = false;
 				this.recordingTimer.Stop();
-
-				/*if (!string.IsNullOrEmpty(AudioRecorder.RecordedFile))
-				{
-					this.Log("Recording stopped", AudioRecorder.RecordedFile);
-					this.Log("Start leveling recorder audio file ...", AudioRecorder.RecordedFile);
-					
-					var leveledObj = AudioCollection.LevelAudioFileAsync(AudioRecorder.RecordedFile, 60, 1.0f).ContinueWith(task =>
-					{
-						if (task.IsCompletedSuccessfully)
-						{
-							this.Log("Recorder audio file leveled successfully", AudioRecorder.RecordedFile);
-						}
-						else
-						{
-							this.Log("Error leveling recorder audio file", task.Exception?.Message ?? "Unknown error");
-						}
-					});	
-				}*/
-
 			}
 
 			// Stop playback if running
@@ -398,9 +377,6 @@ namespace AsynCLAudio.Forms
 			// Fill time stretch kernels
 			this.FillStretchKernelsComboBox();
 
-			// Update waveform
-			// this.UpdateWaveform().Wait();
-
 			this.textBox_trackInfo.Text = track.SampleRate + " Hz" + Environment.NewLine +
 				track.Channels + " ch." + Environment.NewLine +
 				track.BitDepth + " bits" + Environment.NewLine +
@@ -489,11 +465,27 @@ namespace AsynCLAudio.Forms
 				this.textBox_time.ResetText();
 			}
 
-			// Get peak volume for selected mmDevice
-			MMDevice? selectedDevice = this.comboBox_captureDevices.SelectedItem as MMDevice;
-			float peakVolume = AudioRecorder.GetPeakVolume(selectedDevice);
-			this.label_peakVolume.ForeColor = peakVolume > 0.0f ? Color.Green : Color.DarkGray;
-			this.label_peakVolume.Text = $"Peak Volume: {peakVolume:F6}";
+			// Get peak volume
+			if (this.checkBox_detect.Checked)
+			{
+				float peakVolume = AudioRecorder.GetPeakVolume();
+				this.label_peakVolume.ForeColor = peakVolume > 0.0f ? Color.Green : Color.DarkGray;
+				this.label_peakVolume.Text = $"Peak Volume: {peakVolume:F6}";
+				this.comboBox_captureDevices.Text = AudioRecorder.CaptureDeviceName + " (" + AudioRecorder.MMDeviceName + ")";
+
+				float detectedBeat = AudioRecorder.EstimatedBpm;
+				this.label_detectedBeat.ForeColor = Color.Green;
+				this.label_detectedBeat.Text = $"Detected BPM: {detectedBeat:F3}";
+				// this.numericUpDown_initialBpm.Value = (decimal) detectedBeat;
+			}
+			else
+			{
+				this.label_peakVolume.ForeColor = Color.DarkGray;
+				this.label_peakVolume.Text = "Peak Volume: N/A";
+
+				this.label_detectedBeat.ForeColor = Color.DarkGray;
+				this.label_detectedBeat.Text = "Detected BPM: N/A";
+			}
 
 			// If hueShift checked, apply hue shift to graph color
 			if (this.checkBox_hueGraph.Checked)
@@ -894,6 +886,9 @@ namespace AsynCLAudio.Forms
 				this.playbackTimer?.Dispose();
 				this.playbackTimer = null;
 
+				this.label_peakVolume.ForeColor = Color.DarkGray;
+				this.label_peakVolume.Text = "Peak Volume: 0.0f";
+
 				this.FillTracksListBox();
 				this.UpdateInfoView();
 				return;
@@ -1194,7 +1189,7 @@ namespace AsynCLAudio.Forms
 
 			string fileName = Path.Combine(outDir, $"LiveRecording_{DateTime.Now:ddMMyyyy_HHmmss}.wav");
 
-			if (!this.recording)
+			if (!AudioRecorder.IsRecording)
 			{
 				this.comboBox_captureDevices.Enabled = false;
 				this.button_record.ForeColor = Color.Red;
@@ -1241,8 +1236,6 @@ namespace AsynCLAudio.Forms
 
 				// this.comboBox_captureDevices.Enabled = true;
 			}
-
-			this.recording = !this.recording;
 		}
 
 		private void RecordingTimer_Elapsed(object? sender, System.Timers.ElapsedEventArgs e)
@@ -1430,11 +1423,31 @@ namespace AsynCLAudio.Forms
 
 		private static float HueToRgb(float v1, float v2, float vH)
 		{
-			if (vH < 0.0f) vH += 1.0f;
-			if (vH > 1.0f) vH -= 1.0f;
-			if ((6.0f * vH) < 1.0f) return (v1 + (v2 - v1) * 6.0f * vH);
-			if ((2.0f * vH) < 1.0f) return v2;
-			if ((3.0f * vH) < 2.0f) return (v1 + (v2 - v1) * ((2.0f / 3.0f) - vH) * 6.0f);
+			if (vH < 0.0f)
+			{
+				vH += 1.0f;
+			}
+
+			if (vH > 1.0f)
+			{
+				vH -= 1.0f;
+			}
+
+			if ((6.0f * vH) < 1.0f)
+			{
+				return (v1 + (v2 - v1) * 6.0f * vH);
+			}
+
+			if ((2.0f * vH) < 1.0f)
+			{
+				return v2;
+			}
+
+			if ((3.0f * vH) < 2.0f)
+			{
+				return (v1 + (v2 - v1) * ((2.0f / 3.0f) - vH) * 6.0f);
+			}
+
 			return v1;
 		}
 
@@ -1599,6 +1612,11 @@ namespace AsynCLAudio.Forms
 			{
 				await this.SelectedTrack.StartLoop(this.currentLoopBeats);
 			}
+		}
+
+		private void checkBox_detect_CheckedChanged(object sender, EventArgs e)
+		{
+			
 		}
 	}
 }
