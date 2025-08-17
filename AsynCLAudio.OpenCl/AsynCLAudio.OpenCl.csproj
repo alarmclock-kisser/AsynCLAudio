@@ -16,6 +16,9 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Update="Kernels\Audio\beatScan01.cl">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
     <None Update="Kernels\Audio\fft01.cl">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>

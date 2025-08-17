@@ -51,6 +51,8 @@ namespace AsynCLAudio.Forms
 			// Event for right-click on entry -> remove context menu (selected track)
 			this.SetupContextMenuForListBox();
 			this.RegisterNumericToSecondPow(this.numericUpDown_chunkSize);
+			this.RegisterNumericToSecondPow(this.numericUpDown_bpmWindowSize);
+			this.RegisterNumericToSecondPow(this.numericUpDown_bpmLookingRange);
 			this.listBox_tracks.SelectedValueChanged += this.ListBoxTracks_SelectedValueChanged;
 			this.recordingTimer.Elapsed += this.RecordingTimer_Elapsed;
 			this.listBox_log.DoubleClick += this.listBox_log_DoubleClick;
@@ -58,6 +60,7 @@ namespace AsynCLAudio.Forms
 			this.vScrollBar_masterVolume.ValueChanged += (sender, e) => this.UpdateVolumeLabels();
 			this.vScrollBar_trackVolume.ValueChanged += (sender, e) => this.UpdateVolumeLabels();
 			this.pictureBox_waveform.MouseWheel += this.pictureBox_waveform_MouseWheel;
+			this.textBox_bpm_scanned.MouseClick += this.textBox_bpm_scanned_MouseClick;
 			this.FillDevicesComboBox(2);
 			this.UpdateInfoView();
 		}
@@ -482,9 +485,6 @@ namespace AsynCLAudio.Forms
 			{
 				this.label_peakVolume.ForeColor = Color.DarkGray;
 				this.label_peakVolume.Text = "Peak Volume: N/A";
-
-				this.label_detectedBeat.ForeColor = Color.DarkGray;
-				this.label_detectedBeat.Text = "Detected BPM: N/A";
 			}
 
 			// If hueShift checked, apply hue shift to graph color
@@ -844,37 +844,6 @@ namespace AsynCLAudio.Forms
 					this.Log("Export error", ex.Message, true);
 				}
 			}
-		}
-
-		// Event for when mouse is over the playback button: Set ForeColor to Red while mouse is over it, afterwards reset to default
-		private void button_playback_MouseEnter(object? sender, EventArgs e)
-		{
-			// While mouse is over the button, watch for CTRL key down, then set ForeColor to Red, else if mouse leaves, reset ForeColor to default
-			while (this.button_playback.ClientRectangle.Contains(this.button_playback.PointToClient(Cursor.Position)))
-			{
-				if ((ModifierKeys & Keys.Control) == Keys.Control)
-				{
-					this.button_playback.ForeColor = Color.Red;
-
-					this.label_info_playbackInfo.Text = "Stop all (!)";
-					this.label_info_playbackInfo.ForeColor = Color.Red;
-					this.label_info_playbackInfo.Visible = true;
-				}
-				else
-				{
-					this.button_playback.ForeColor = SystemColors.ControlText;
-					this.label_info_playbackInfo.ResetText();
-					this.label_info_playbackInfo.Visible = false;
-				}
-
-				Application.DoEvents();
-				System.Threading.Thread.Sleep(100);
-			}
-
-			// Reset ForeColor to default
-			this.button_playback.ForeColor = SystemColors.ControlText;
-			this.label_info_playbackInfo.ResetText();
-			this.label_info_playbackInfo.Visible = false;
 		}
 
 		private async void button_playback_Click(object sender, EventArgs e)
@@ -1508,6 +1477,7 @@ namespace AsynCLAudio.Forms
 				this.checkBox_hueGraph.Checked = true;
 				this.numericUpDown_hueShift.Enabled = true;
 				this.numericUpDown_hueShift.Value = 100;
+				this.numericUpDown_fps.Tag = (int) this.numericUpDown_fps.Value;
 				this.numericUpDown_fps.Value = 75;
 				this.audioCollection.BackColor = Color.Black;
 			}
@@ -1519,7 +1489,7 @@ namespace AsynCLAudio.Forms
 				this.checkBox_hueGraph.Checked = false;
 				this.numericUpDown_hueShift.Enabled = false;
 				this.numericUpDown_hueShift.Value = 5;
-				this.numericUpDown_fps.Value = 30;
+				this.numericUpDown_fps.Value = (int) (this.numericUpDown_fps.Tag ?? 45);
 				this.audioCollection.BackColor = this.button_backColor.BackColor;
 			}
 
@@ -1616,7 +1586,90 @@ namespace AsynCLAudio.Forms
 
 		private void checkBox_detect_CheckedChanged(object sender, EventArgs e)
 		{
-			
+
+		}
+
+		private async void button_scan_Click(object sender, EventArgs e)
+		{
+			bool inParallel = ModifierKeys.HasFlag(Keys.Control);
+
+			var track = this.SelectedTrack;
+			if (track == null)
+			{
+				this.Log("Scan error", "Please select a track to scan", false);
+				return;
+			}
+
+			if (track.IsProcessing)
+			{
+				this.Log("Scan error", "Track is currently processing, please wait", false);
+				return;
+			}
+
+			int windowSize = (int) this.numericUpDown_bpmWindowSize.Value;
+			int lookingRange = (int) this.numericUpDown_bpmLookingRange.Value;
+			int minBpm = (int) this.numericUpDown_bpm_min.Value;
+			int maxBpm = (int) this.numericUpDown_bpm_max.Value;
+			long distance = windowSize * lookingRange;
+
+			double scannedBpm = 0.0;
+			this.Log($"Started scanning with {track.GetTime(distance):F3} sec. ...", track.Name);
+
+			try
+			{
+				scannedBpm = await BeatScanner.ScanBpmAsync(track, windowSize, lookingRange, minBpm, maxBpm);
+				this.Log($"Scanned BPM: {scannedBpm:F3}", track.Name);
+				if (scannedBpm < 10)
+				{
+					this.textBox_bpm_scanned.ResetText();
+					this.Log($"Scan result: {scannedBpm:F3}", "No valid BPM found");
+				}
+				else
+				{
+					this.textBox_bpm_scanned.Text = scannedBpm.ToString("F3");
+					this.Log($"Scan result: {scannedBpm:F3}", "Valid BPM found");
+				}
+
+			}
+			catch (Exception ex)
+			{
+				this.Log("Scan error", ex.Message, true);
+			}
+		}
+
+		private async void textBox_bpm_scanned_MouseClick(object? sender, MouseEventArgs e)
+		{
+			// If CTRL down, set BPM to scanned value
+			if (e.Button == MouseButtons.Left && (ModifierKeys & Keys.Control) == Keys.Control)
+			{
+				if (this.SelectedTrack == null)
+				{
+					this.Log("Scan error", "Please select a track to set BPM", false);
+					return;
+				}
+
+				string bpmText = this.textBox_bpm_scanned.Text.Replace(" BPM", "").Trim();
+				if (float.TryParse(bpmText, out float bpm))
+				{
+					if (bpm > 0)
+					{
+						await this.SelectedTrack.UpdateBpm(bpm);
+						this.numericUpDown_initialBpm.Value = (decimal) bpm;
+						this.numericUpDown_targetBpm.Value = (decimal) bpm;
+						this.Log($"Set BPM to {bpm:F3}", this.SelectedTrack.Name);
+
+						this.UpdateInfoView();
+					}
+					else
+					{
+						this.Log("Set BPM error", "Scanned BPM is not valid");
+					}
+				}
+				else
+				{
+					this.Log("Set BPM error", "Invalid BPM value", true);
+				}
+			}
 		}
 	}
 }

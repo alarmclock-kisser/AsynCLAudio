@@ -7,6 +7,8 @@ using System.Linq;
 using System.Security.Claims;
 using System.Text;
 using System.Threading.Tasks;
+using TagLib.Mpeg;
+using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace AsynCLAudio.OpenCl
 {
@@ -675,6 +677,105 @@ namespace AsynCLAudio.OpenCl
 				return (outputPointer != IntPtr.Zero ? outputPointer : objPointer, factor);
 			});
 		}
+
+		public async Task<IntPtr> ExecuteBeatScanAsync(IntPtr fftPointer, long length = 0, string kernelName = "beatScan", string version = "01", int sampleRate = 44100, int bitDepth = 24)
+		{
+			return await Task.Run(() =>
+			{
+				// Get kernel path
+				string kernelPath = this.compiler.KernelFiles.FirstOrDefault(f => f.ToLower().Contains((kernelName + version).ToLower())) ?? "";
+				if (string.IsNullOrEmpty(kernelPath))
+				{
+					return IntPtr.Zero;
+				}
+
+				// Load kernel if not loaded
+				if (this.Kernel == null || this.KernelFile != kernelPath)
+				{
+					this.compiler.LoadKernel("", kernelPath);
+					if (this.Kernel == null || this.KernelFile == null || !this.KernelFile.Contains("\\Audio\\"))
+					{
+						return IntPtr.Zero;
+					}
+				}
+
+				// Get input buffer
+				OpenClMem? inputMem = this.register.GetBuffer(fftPointer);
+				if (inputMem == null || inputMem.GetCount() <= 0 || inputMem.GetLengths().Any(l => l < 1))
+				{
+					return IntPtr.Zero;
+				}
+
+				// Get output buffer
+				OpenClMem? outputMem = this.register.AllocateGroup<double>((nint) inputMem.GetCount(), (int) inputMem.GetLengths().FirstOrDefault());
+				if (outputMem == null || outputMem.GetCount() <= 0 || outputMem.GetLengths().Any(l => l < 1))
+				{
+					return IntPtr.Zero;
+				}
+
+				// Set kernel arguments
+				CLResultCode error = this.SetKernelArgSafe(3, sampleRate);
+				error = this.SetKernelArgSafe(4, bitDepth);
+
+				// Get work dimensions
+				uint maxWorkGroupSize = this.GetMaxWorkGroupSize();
+				uint globalWorkSize = (uint) inputMem.GetLengths().FirstOrDefault();
+				uint localWorkSize = Math.Min(maxWorkGroupSize, globalWorkSize);
+				if (localWorkSize == 0)
+				{
+					localWorkSize = 1; // Fallback to 1 if no valid local size
+				}
+				if (globalWorkSize < localWorkSize)
+				{
+					globalWorkSize = localWorkSize; // Ensure global size is at least local size
+				}
+
+				for (int i = 0; i < inputMem.GetCount(); i++)
+				{
+					// Set kernel arguments for each buffer
+					this.SetKernelArgSafe(0, inputMem[i]);
+					this.SetKernelArgSafe(1, outputMem[i]);
+					this.SetKernelArgSafe(2, inputMem.GetLengths()[i]);
+
+					// Execute kernel
+					error = CL.EnqueueNDRangeKernel(this.queue, this.Kernel.Value, 1, null, [(UIntPtr) globalWorkSize], [(UIntPtr) localWorkSize], 0, null, out CLEvent evt);
+					if (error != CLResultCode.Success)
+					{
+						this.lastError = error;
+						return IntPtr.Zero;
+					}
+
+					// Wait for completion
+					error = CL.WaitForEvents(1, [evt]);
+					if (error != CLResultCode.Success)
+					{
+						this.lastError = error;
+						return inputMem.indexHandle;
+					}
+
+					// Release event
+					error = CL.ReleaseEvent(evt);
+					if (error != CLResultCode.Success)
+					{
+						this.lastError = error;
+					}
+				}
+
+				// Free input buffer if necessary
+				if (inputMem.indexHandle != IntPtr.Zero)
+				{
+					long freed = this.register.FreeBuffer(fftPointer, true);
+					if (freed > 0)
+					{
+						Console.WriteLine("Freed: " + freed + " MB");
+					}
+				}
+
+				return outputMem.indexHandle;
+			});
+		}
+
+
 
 		// Helpers
 		public List<object> MergeArgumentsAudio(object[] variableArguments, CLBuffer inputBuffer, CLBuffer outputBuffer, long length, int chunkSize, float overlap, int samplerate, int bitdepth, int channels, Dictionary<string, object>? optionalArgs = null)

@@ -1,5 +1,6 @@
 ﻿using AsynCLAudio.Core;
 using OpenTK.Compute.OpenCL;
+using OpenTK.Mathematics;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -459,6 +460,125 @@ namespace AsynCLAudio.OpenCl
 			}
 
 			return obj;
+		}
+
+		public async Task<Complex[]> GetFftData(AudioObj obj, int chunkSize = 65536, int maxWorkers = -2, IProgress<int>? progress = null)
+		{
+			if (this.Executioner == null || this.Register == null)
+			{
+				Console.WriteLine("OpenCL is not initialized.");
+				return [];
+			}
+
+			if (!obj.OnHost)
+			{
+				return [];
+			}
+
+			maxWorkers = CommonStatics.AdjustWorkersCount(maxWorkers);
+
+			var mem = this.Register.PushChunks<float>((await obj.SplitData(chunkSize)).ToList());
+			if (mem == null)
+			{
+				Console.WriteLine("Failed to move audio to device memory.");
+				return [];
+			}
+
+			IntPtr pointer = mem.indexHandle;
+
+			// Perform FFT on device
+			pointer = this.Executioner.ExecuteFFT(pointer, "01", 'f', 0, 0.0f, true);
+			if (pointer == IntPtr.Zero)
+			{
+				Console.WriteLine("Failed to perform FFT", "Pointer=" + pointer.ToString("X16"));
+				return [];
+			}
+
+			// Pull complex data from device memory
+			var complexData = this.Register.PullChunks<OpenTK.Mathematics.Vector2>(pointer);
+			if (complexData == null || complexData.Count == 0)
+			{
+				Console.WriteLine("Failed to pull complex data from device memory.");
+				return [];
+			}
+
+			// Convert OpenTK.Mathematics.Vector2 to System.Numerics.Complex in parallel
+			List<Complex[]> result = new(complexData.Count);
+			await Task.Run(() =>
+			{
+				Parallel.For(0, complexData.Count, new ParallelOptions { MaxDegreeOfParallelism = maxWorkers }, i =>
+				{
+					var vec = complexData[i];
+					result[i] = vec.Select(c => new Complex(c.X, c.Y)).ToArray();
+				});
+			});
+
+			// Clean up memory
+			this.Register.FreeBuffer(pointer);
+
+			// Flatten the list of Complex arrays into a single array
+			Complex[] flattenedResult = result.SelectMany(arr => arr).ToArray();
+
+			return flattenedResult;
+		}
+
+		public async Task<double[]> ScanBpm(AudioObj obj, string kernelName = "beatScan", string version = "01", int chunkSize = 65536)
+		{
+			if (this.Executioner == null || this.Register == null)
+			{
+				Console.WriteLine("OpenCL is not initialized.");
+				return [];
+			}
+			
+			if (!obj.OnHost)
+			{
+				return [];
+			}
+
+			float[] monoData = await obj.ConvertToMono();
+			float[][] monoChunks = await obj.SplitData(chunkSize);
+
+			var mem = this.Register.PushChunks<float>(monoChunks.ToList());
+			if (mem == null)
+			{
+				Console.WriteLine("Failed to move audio to device memory.");
+				return [];
+			}
+
+			IntPtr pointer = mem.indexHandle;
+			long length = mem.GetTotalLength() ;
+
+			// Perform FFT
+			pointer = await this.Executioner.ExecuteFFTAsync(pointer, "01", 'f', 0, 0.0f, true);
+			if (pointer == IntPtr.Zero)
+			{
+				Console.WriteLine("Failed to perform FFT", "Pointer=" + pointer.ToString("X16"));
+				return [];
+			}
+
+			// Scan BPM
+			pointer = await this.Executioner.ExecuteBeatScanAsync(pointer, length, kernelName, version, obj.SampleRate, obj.BitDepth);
+			if (pointer == IntPtr.Zero)
+			{
+				Console.WriteLine("Failed to scan BPM", "Pointer=" + pointer.ToString("X16"));
+				return [];
+			}
+
+			// Pull BPM result (double[])
+			List<double[]> bpmData = this.Register.PullChunks<double>(pointer);
+			if (bpmData == null || bpmData.Count == 0)
+			{
+				Console.WriteLine("Failed to pull BPM data from device memory.");
+				return [];
+			}
+
+			// Flatten the list of double arrays into a single array
+			double[] flattenedBpmData = bpmData.SelectMany(arr => arr).ToArray();
+
+			// Clean up memory
+			this.Register.FreeBuffer(pointer);
+
+			return flattenedBpmData;
 		}
 
 	}

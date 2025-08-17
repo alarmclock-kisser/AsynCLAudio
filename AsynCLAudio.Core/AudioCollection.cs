@@ -49,7 +49,10 @@ namespace AsynCLAudio.Core
 			AudioObj? obj = null;
 			if (linearLoad)
 			{
-				obj = new AudioObj(filePath, true);
+				await Task.Run(() =>
+				{
+					obj = new AudioObj(filePath, true);
+				});
 			}
 			else
 			{

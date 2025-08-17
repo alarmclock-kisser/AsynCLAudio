@@ -299,9 +299,11 @@ namespace AsynCLAudio.Core
 			return this.Bpm;
 		}
 
-		public void UpdateBpm(float newValue = 0.0f)
+		public async Task UpdateBpm(float newValue = 0.0f)
 		{
 			this.Bpm = newValue;
+
+			await this.AddBpmTag(newValue, this.FilePath);
 		}
 
 		public async Task<byte[]> GetBytesAsync(int maxWorkers = -2)
@@ -986,9 +988,11 @@ namespace AsynCLAudio.Core
 				// Add BPM metadata if needed
 				if (this.Bpm > 0.0f)
 				{
-					await this.AddBpmTag(outPath, this.Bpm)
+					await this.AddBpmTag(this.Bpm, outPath)
 						.ConfigureAwait(false);
 				}
+
+				this.FilePath = outPath;
 
 				return outPath;
 			}
@@ -1031,15 +1035,47 @@ namespace AsynCLAudio.Core
 			return Path.Combine(outPath, $"{baseFileName}.wav");
 		}
 
-		private async Task AddBpmTag(string filePath, float bpm)
+		private async Task AddBpmTag(float bpm = 0.0f, string filePath = "")
 		{
+			if (string.IsNullOrEmpty(filePath))
+			{
+				filePath = this.FilePath;
+			}
+
+			if (bpm <= 0)
+			{
+				bpm = this.Bpm;
+			}
+
+			if (!File.Exists(filePath))
+			{
+				Debug.WriteLine($"File not found for BPM tag writing: {filePath}");
+				return;
+			}
+
 			try
 			{
 				await Task.Run(() =>
 				{
-					using var file = TagLib.File.Create(filePath);
-					file.Tag.BeatsPerMinute = (uint) (bpm * 100);
-					file.Save();
+					// Create or open the file using TagLib
+					using (var file = TagLib.File.Create(filePath))
+					{
+						// Set BPM tag
+						file.Tag.BeatsPerMinute = (uint) (bpm < 1000 ? bpm * 100 : bpm);
+
+						// Add or update TBPM frame
+						var id3v2Tag = (TagLib.Id3v2.Tag) file.GetTag(TagLib.TagTypes.Id3v2);
+						var bpmFrame = TagLib.Id3v2.TextInformationFrame.Get(id3v2Tag, "TBPM", true);
+						if (bpmFrame == null)
+						{
+							bpmFrame = new TagLib.Id3v2.TextInformationFrame("TBPM");
+							id3v2Tag.AddFrame(bpmFrame);
+						}
+						bpmFrame.Text = [bpm.ToString(CultureInfo.InvariantCulture)];
+
+						// Save changes
+						file.Save();
+					}
 				}).ConfigureAwait(false);
 			}
 			catch (Exception ex)
@@ -1227,7 +1263,146 @@ namespace AsynCLAudio.Core
 			return timeInSeconds;
 		}
 
-		
+		public async Task<float[]> ConvertToMono(bool set = false, int maxWorkers = -2)
+		{
+			if (this.Data == null || this.Data.Length == 0 || this.Channels <= 0)
+			{
+				return [];
+			}
+
+			// Adjust maxWorkers
+			maxWorkers = CommonStatics.AdjustWorkersCount(maxWorkers);
+
+			// Calculate the number of samples in mono
+			int monoSampleCount = this.Data.Length / this.Channels;
+			float[] monoData = new float[monoSampleCount];
+
+			await Task.Run(() =>
+			{
+				Parallel.For(0, monoSampleCount, new ParallelOptions
+				{
+					MaxDegreeOfParallelism = maxWorkers
+				}, i =>
+				{
+					float sum = 0.0f;
+					for (int channel = 0; channel < this.Channels; channel++)
+					{
+						sum += this.Data[i * this.Channels + channel];
+					}
+					monoData[i] = sum / this.Channels;
+				});
+			});
+
+			if (set)
+			{
+				this.Data = monoData;
+				this.Channels = 1;
+			}
+
+			return monoData;
+		}
+
+		public async Task<float[][]> SplitData(int chunkSize = 65536, int maxWorkers = -2)
+		{
+			if (this.Data == null || this.Data.Length == 0)
+			{
+				return [];
+			}
+
+			// Adjust maxWorkers
+			maxWorkers = CommonStatics.AdjustWorkersCount(maxWorkers);
+
+			// Validate chunk size
+			chunkSize = Math.Max(1, chunkSize);
+			
+			int totalChunks = (int) Math.Ceiling((double) this.Data.Length / chunkSize);
+			float[][] chunks = new float[totalChunks][];
+			
+			await Task.Run(() =>
+			{
+				Parallel.For(0, totalChunks, new ParallelOptions
+				{
+					MaxDegreeOfParallelism = maxWorkers
+				}, i =>
+				{
+					int start = i * chunkSize;
+					int length = Math.Min(chunkSize, this.Data.Length - start);
+					chunks[i] = new float[chunkSize];
+					Array.Copy(this.Data, start, chunks[i], 0, length);
+				});
+			});
+
+			return chunks;
+		}
+
+
+
+		public async Task<float[]> GetCurrentWindow(int windowSize = 65536, int lookingRange = 2, bool mono = false)
+		{
+			if (this.Data == null || this.Data.Length == 0 || this.SampleRate <= 0 || this.Channels <= 0)
+			{
+				return [];
+			}
+
+			// Parameter normalisieren
+			windowSize = Math.Max(1, windowSize);
+			lookingRange = Math.Max(1, lookingRange);
+			// Für spätere FFTs oft sinnvoll: auf Potenz von 2 schnappen
+			windowSize = (int) Math.Pow(2, Math.Ceiling(Math.Log(windowSize, 2)));
+
+			// Position in Frames (position ist bereits frame-basiert)
+			long posFrames = this.position;
+
+			// Fensterbreite in Frames: um pos herum jeweils die Hälfte
+			int halfWindowFrames = (windowSize * lookingRange) / 2;
+			int fullWindowFrames = halfWindowFrames * 2;
+			if (fullWindowFrames <= 0)
+			{
+				return [];
+			}
+
+			if (mono)
+			{
+				// Mono-Daten (Frames == Samples)
+				float[] data = await this.ConvertToMono(false);
+				if (data.Length == 0)
+				{
+					return [];
+				}
+
+				long startFrame = posFrames - halfWindowFrames;
+				long endFrameExclusive = startFrame + fullWindowFrames;
+
+				// Out-of-bounds vermeiden
+				if (startFrame < 0 || endFrameExclusive > data.LongLength)
+				{
+					return [];
+				}
+
+				float[] current = new float[fullWindowFrames];
+				await Task.Run(() => Array.Copy(data, (int) startFrame, current, 0, fullWindowFrames));
+				return current;
+			}
+			else
+			{
+				// Interleaved Mehrkanal-Daten (Floats)
+				float[] data = this.Data;
+
+				long startFloatIndex = (posFrames - halfWindowFrames) * this.Channels;
+				long endFloatIndexExclusive = startFloatIndex + ((long) fullWindowFrames * this.Channels);
+
+				if (startFloatIndex < 0 || endFloatIndexExclusive > data.LongLength)
+				{
+					return [];
+				}
+
+				int lengthFloats = fullWindowFrames * this.Channels;
+				float[] current = new float[lengthFloats];
+				await Task.Run(() => Array.Copy(data, (int) startFloatIndex, current, 0, lengthFloats));
+				return current;
+			}
+		}
+
 
 	}
 }

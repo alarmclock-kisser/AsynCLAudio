@@ -17,6 +17,7 @@ public static class AudioRecorder
 	public static string? RecordedFile { get; private set; } = null;
 
 	public static float EstimatedBpm => GetPeaksPerMinute();
+	public static double MaxDetectionAttention { get; set; } = 4;
 	private static readonly List<DateTime> _peakHits = [];
 	private static readonly object _peakLock = new();
 	private static float peakThreshold = 0.95f;
@@ -83,7 +84,7 @@ public static class AudioRecorder
 				}
 
 				// Alte Einträge (älter als 60s) entfernen
-				_peakHits.RemoveAll(t => (DateTime.UtcNow - t).TotalSeconds > 60);
+				_peakHits.RemoveAll(t => (DateTime.UtcNow - t).TotalSeconds > MaxDetectionAttention);
 			}
 		}
 	}

@@ -81,6 +81,16 @@ namespace AsynCLAudio.Forms
 			this.button_loop = new Button();
 			this.label_detectedBeat = new Label();
 			this.checkBox_detect = new CheckBox();
+			this.button_scan = new Button();
+			this.numericUpDown_bpmLookingRange = new NumericUpDown();
+			this.numericUpDown_bpmWindowSize = new NumericUpDown();
+			this.label_info_bpmWindowSize = new Label();
+			this.label_info_bpmLookingRange = new Label();
+			this.numericUpDown_bpm_max = new NumericUpDown();
+			this.numericUpDown_bpm_min = new NumericUpDown();
+			this.label_info_bpmMin = new Label();
+			this.label_info_bpmMax = new Label();
+			this.textBox_bpm_scanned = new TextBox();
 			((System.ComponentModel.ISupportInitialize) this.pictureBox_waveform).BeginInit();
 			((System.ComponentModel.ISupportInitialize) this.audioCollectionBindingSource).BeginInit();
 			((System.ComponentModel.ISupportInitialize) this.numericUpDown_chunkSize).BeginInit();
@@ -93,6 +103,10 @@ namespace AsynCLAudio.Forms
 			((System.ComponentModel.ISupportInitialize) this.numericUpDown_fps).BeginInit();
 			((System.ComponentModel.ISupportInitialize) this.numericUpDown_levelDuration).BeginInit();
 			((System.ComponentModel.ISupportInitialize) this.windowMainBindingSource).BeginInit();
+			((System.ComponentModel.ISupportInitialize) this.numericUpDown_bpmLookingRange).BeginInit();
+			((System.ComponentModel.ISupportInitialize) this.numericUpDown_bpmWindowSize).BeginInit();
+			((System.ComponentModel.ISupportInitialize) this.numericUpDown_bpm_max).BeginInit();
+			((System.ComponentModel.ISupportInitialize) this.numericUpDown_bpm_min).BeginInit();
 			this.SuspendLayout();
 			// 
 			// pictureBox_waveform
@@ -304,9 +318,9 @@ namespace AsynCLAudio.Forms
 			this.listBox_log.Font = new Font("Segoe UI", 8.25F, FontStyle.Regular, GraphicsUnit.Point,  0);
 			this.listBox_log.FormattingEnabled = true;
 			this.listBox_log.ItemHeight = 13;
-			this.listBox_log.Location = new Point(12, 102);
+			this.listBox_log.Location = new Point(12, 167);
 			this.listBox_log.Name = "listBox_log";
-			this.listBox_log.Size = new Size(414, 251);
+			this.listBox_log.Size = new Size(414, 186);
 			this.listBox_log.TabIndex = 21;
 			// 
 			// vScrollBar_trackVolume
@@ -449,7 +463,7 @@ namespace AsynCLAudio.Forms
 			this.numericUpDown_fps.Name = "numericUpDown_fps";
 			this.numericUpDown_fps.Size = new Size(45, 23);
 			this.numericUpDown_fps.TabIndex = 36;
-			this.numericUpDown_fps.Value = new decimal(new int[] { 30, 0, 0, 0 });
+			this.numericUpDown_fps.Value = new decimal(new int[] { 45, 0, 0, 0 });
 			this.numericUpDown_fps.ValueChanged += this.numericUpDown_fps_ValueChanged;
 			// 
 			// label_info_fps
@@ -664,13 +678,108 @@ namespace AsynCLAudio.Forms
 			// checkBox_detect
 			// 
 			this.checkBox_detect.AutoSize = true;
-			this.checkBox_detect.Location = new Point(166, 77);
+			this.checkBox_detect.Location = new Point(12, 102);
 			this.checkBox_detect.Name = "checkBox_detect";
-			this.checkBox_detect.Size = new Size(60, 19);
+			this.checkBox_detect.Size = new Size(83, 19);
 			this.checkBox_detect.TabIndex = 58;
-			this.checkBox_detect.Text = "Detect";
+			this.checkBox_detect.Text = "Live detect";
 			this.checkBox_detect.UseVisualStyleBackColor = true;
 			this.checkBox_detect.CheckedChanged += this.checkBox_detect_CheckedChanged;
+			// 
+			// button_scan
+			// 
+			this.button_scan.Location = new Point(12, 138);
+			this.button_scan.Name = "button_scan";
+			this.button_scan.Size = new Size(50, 23);
+			this.button_scan.TabIndex = 59;
+			this.button_scan.Text = "Scan";
+			this.button_scan.UseVisualStyleBackColor = true;
+			this.button_scan.Click += this.button_scan_Click;
+			// 
+			// numericUpDown_bpmLookingRange
+			// 
+			this.numericUpDown_bpmLookingRange.Location = new Point(376, 138);
+			this.numericUpDown_bpmLookingRange.Maximum = new decimal(new int[] { 64, 0, 0, 0 });
+			this.numericUpDown_bpmLookingRange.Minimum = new decimal(new int[] { 1, 0, 0, 0 });
+			this.numericUpDown_bpmLookingRange.Name = "numericUpDown_bpmLookingRange";
+			this.numericUpDown_bpmLookingRange.Size = new Size(50, 23);
+			this.numericUpDown_bpmLookingRange.TabIndex = 60;
+			this.numericUpDown_bpmLookingRange.Value = new decimal(new int[] { 16, 0, 0, 0 });
+			// 
+			// numericUpDown_bpmWindowSize
+			// 
+			this.numericUpDown_bpmWindowSize.Location = new Point(300, 138);
+			this.numericUpDown_bpmWindowSize.Maximum = new decimal(new int[] { 262144, 0, 0, 0 });
+			this.numericUpDown_bpmWindowSize.Minimum = new decimal(new int[] { 128, 0, 0, 0 });
+			this.numericUpDown_bpmWindowSize.Name = "numericUpDown_bpmWindowSize";
+			this.numericUpDown_bpmWindowSize.Size = new Size(70, 23);
+			this.numericUpDown_bpmWindowSize.TabIndex = 62;
+			this.numericUpDown_bpmWindowSize.Value = new decimal(new int[] { 131072, 0, 0, 0 });
+			// 
+			// label_info_bpmWindowSize
+			// 
+			this.label_info_bpmWindowSize.AutoSize = true;
+			this.label_info_bpmWindowSize.Location = new Point(300, 120);
+			this.label_info_bpmWindowSize.Name = "label_info_bpmWindowSize";
+			this.label_info_bpmWindowSize.Size = new Size(51, 15);
+			this.label_info_bpmWindowSize.TabIndex = 63;
+			this.label_info_bpmWindowSize.Text = "Window";
+			// 
+			// label_info_bpmLookingRange
+			// 
+			this.label_info_bpmLookingRange.AutoSize = true;
+			this.label_info_bpmLookingRange.Location = new Point(376, 120);
+			this.label_info_bpmLookingRange.Name = "label_info_bpmLookingRange";
+			this.label_info_bpmLookingRange.Size = new Size(40, 15);
+			this.label_info_bpmLookingRange.TabIndex = 64;
+			this.label_info_bpmLookingRange.Text = "Range";
+			// 
+			// numericUpDown_bpm_max
+			// 
+			this.numericUpDown_bpm_max.Location = new Point(229, 138);
+			this.numericUpDown_bpm_max.Maximum = new decimal(new int[] { 360, 0, 0, 0 });
+			this.numericUpDown_bpm_max.Minimum = new decimal(new int[] { 150, 0, 0, 0 });
+			this.numericUpDown_bpm_max.Name = "numericUpDown_bpm_max";
+			this.numericUpDown_bpm_max.Size = new Size(65, 23);
+			this.numericUpDown_bpm_max.TabIndex = 65;
+			this.numericUpDown_bpm_max.Value = new decimal(new int[] { 240, 0, 0, 0 });
+			// 
+			// numericUpDown_bpm_min
+			// 
+			this.numericUpDown_bpm_min.Location = new Point(158, 138);
+			this.numericUpDown_bpm_min.Maximum = new decimal(new int[] { 150, 0, 0, 0 });
+			this.numericUpDown_bpm_min.Minimum = new decimal(new int[] { 40, 0, 0, 0 });
+			this.numericUpDown_bpm_min.Name = "numericUpDown_bpm_min";
+			this.numericUpDown_bpm_min.Size = new Size(65, 23);
+			this.numericUpDown_bpm_min.TabIndex = 66;
+			this.numericUpDown_bpm_min.Value = new decimal(new int[] { 80, 0, 0, 0 });
+			// 
+			// label_info_bpmMin
+			// 
+			this.label_info_bpmMin.AutoSize = true;
+			this.label_info_bpmMin.Location = new Point(159, 120);
+			this.label_info_bpmMin.Name = "label_info_bpmMin";
+			this.label_info_bpmMin.Size = new Size(59, 15);
+			this.label_info_bpmMin.TabIndex = 67;
+			this.label_info_bpmMin.Text = "Min. BPM";
+			// 
+			// label_info_bpmMax
+			// 
+			this.label_info_bpmMax.AutoSize = true;
+			this.label_info_bpmMax.Location = new Point(229, 120);
+			this.label_info_bpmMax.Name = "label_info_bpmMax";
+			this.label_info_bpmMax.Size = new Size(60, 15);
+			this.label_info_bpmMax.TabIndex = 68;
+			this.label_info_bpmMax.Text = "Max. BPM";
+			// 
+			// textBox_bpm_scanned
+			// 
+			this.textBox_bpm_scanned.Location = new Point(68, 138);
+			this.textBox_bpm_scanned.Name = "textBox_bpm_scanned";
+			this.textBox_bpm_scanned.PlaceholderText = "0.000 BPM";
+			this.textBox_bpm_scanned.ReadOnly = true;
+			this.textBox_bpm_scanned.Size = new Size(84, 23);
+			this.textBox_bpm_scanned.TabIndex = 69;
 			// 
 			// WindowMain
 			// 
@@ -678,6 +787,16 @@ namespace AsynCLAudio.Forms
 			this.AutoScaleMode = AutoScaleMode.Font;
 			this.BackColor = SystemColors.ControlLight;
 			this.ClientSize = new Size(704, 801);
+			this.Controls.Add(this.textBox_bpm_scanned);
+			this.Controls.Add(this.label_info_bpmMax);
+			this.Controls.Add(this.label_info_bpmMin);
+			this.Controls.Add(this.numericUpDown_bpm_min);
+			this.Controls.Add(this.numericUpDown_bpm_max);
+			this.Controls.Add(this.label_info_bpmLookingRange);
+			this.Controls.Add(this.label_info_bpmWindowSize);
+			this.Controls.Add(this.numericUpDown_bpmWindowSize);
+			this.Controls.Add(this.numericUpDown_bpmLookingRange);
+			this.Controls.Add(this.button_scan);
 			this.Controls.Add(this.checkBox_detect);
 			this.Controls.Add(this.label_detectedBeat);
 			this.Controls.Add(this.button_loop);
@@ -752,6 +871,10 @@ namespace AsynCLAudio.Forms
 			((System.ComponentModel.ISupportInitialize) this.numericUpDown_fps).EndInit();
 			((System.ComponentModel.ISupportInitialize) this.numericUpDown_levelDuration).EndInit();
 			((System.ComponentModel.ISupportInitialize) this.windowMainBindingSource).EndInit();
+			((System.ComponentModel.ISupportInitialize) this.numericUpDown_bpmLookingRange).EndInit();
+			((System.ComponentModel.ISupportInitialize) this.numericUpDown_bpmWindowSize).EndInit();
+			((System.ComponentModel.ISupportInitialize) this.numericUpDown_bpm_max).EndInit();
+			((System.ComponentModel.ISupportInitialize) this.numericUpDown_bpm_min).EndInit();
 			this.ResumeLayout(false);
 			this.PerformLayout();
 		}
@@ -819,5 +942,15 @@ namespace AsynCLAudio.Forms
 		private Button button_loop;
 		private Label label_detectedBeat;
 		private CheckBox checkBox_detect;
+		private Button button_scan;
+		private NumericUpDown numericUpDown_bpmLookingRange;
+		private NumericUpDown numericUpDown_bpmWindowSize;
+		private Label label_info_bpmWindowSize;
+		private Label label_info_bpmLookingRange;
+		private NumericUpDown numericUpDown_bpm_max;
+		private NumericUpDown numericUpDown_bpm_min;
+		private Label label_info_bpmMin;
+		private Label label_info_bpmMax;
+		private TextBox textBox_bpm_scanned;
 	}
 }
