@@ -22,6 +22,7 @@ namespace AsynCLAudio.Core
 		public Guid Id { get; private set; } = Guid.Empty;
 		public DateTime CreatedAt { get; private set; } = DateTime.Now;
 		public string FilePath { get; set; } = string.Empty;
+		public string? ExportedFile { get; private set; } = null;
 		public string Name => (this.IsProcessing ? "~Processing~ " : "") + ((this.player.PlaybackState == PlaybackState.Playing) ? "▶ " : this.player.PlaybackState == PlaybackState.Paused ? "|| " : "") + Path.GetFileNameWithoutExtension(this.FilePath);
 
 		public float[] Data { get; private set; } = [];
@@ -76,7 +77,7 @@ namespace AsynCLAudio.Core
 		private long loopStart = 0;
 		public float Looping => this._isLooping ? this._currentLoopValue : 0;
 
-		public AudioObj(string filePath, bool linearLoad = false, int fps = 20)
+		public AudioObj(string filePath, bool linearLoad = false)
 		{
 			this.Id = Guid.NewGuid();
 			this.FilePath = filePath;
@@ -95,6 +96,8 @@ namespace AsynCLAudio.Core
 			this.Playing = false;
 
 			this.Data = [];
+
+			BeatScanner.RemoveScanned(this);
 
 			GC.SuppressFinalize(this);
 		}
@@ -299,11 +302,14 @@ namespace AsynCLAudio.Core
 			return this.Bpm;
 		}
 
-		public async Task UpdateBpm(float newValue = 0.0f)
+		public async Task UpdateBpm(float newValue = 0.0f, bool writeTag = false)
 		{
 			this.Bpm = newValue;
 
-			await this.AddBpmTag(newValue, this.FilePath);
+			if (writeTag )
+			{
+				await this.AddBpmTag(newValue, this.FilePath);
+			}
 		}
 
 		public async Task<byte[]> GetBytesAsync(int maxWorkers = -2)
@@ -945,13 +951,18 @@ namespace AsynCLAudio.Core
 		// Export
 		public async Task<string?> Export(string outPath = "", string? outFile = null)
 		{
-			if (File.Exists(outPath))
+			if (File.Exists(outFile))
 			{
 				// If outPath is a file, use its directory
 				outPath = Path.GetDirectoryName(outFile) ?? string.Empty;
 			}
 
-			string baseFileName = $"{this.Name.Replace("▶ ", "").Replace("|| ", "")} [{this.Bpm:F1}]";
+			if (string.IsNullOrEmpty(outPath))
+			{
+				outPath = Path.GetTempPath();
+			}
+
+			string baseFileName = $"{this.Name.Replace("▶ ", "").Replace("|| ", "")}{(this.Bpm > 10 ? (" [" + this.Bpm.ToString("F1", CultureInfo.InvariantCulture) + "]") : "")}".Trim();
 
 			// Validate and prepare output directory
 			outPath = (await this.PrepareOutputPath(outPath, baseFileName)) ?? Path.GetTempPath();
@@ -992,7 +1003,7 @@ namespace AsynCLAudio.Core
 						.ConfigureAwait(false);
 				}
 
-				this.FilePath = outPath;
+				this.ExportedFile = outPath;
 
 				return outPath;
 			}
@@ -1337,7 +1348,7 @@ namespace AsynCLAudio.Core
 
 
 
-		public async Task<float[]> GetCurrentWindow(int windowSize = 65536, int lookingRange = 2, bool mono = false)
+		public async Task<float[]> GetCurrentWindow(int windowSize = 65536, int lookingRange = 2, bool mono = false, bool lookBackwards = false)
 		{
 			if (this.Data == null || this.Data.Length == 0 || this.SampleRate <= 0 || this.Channels <= 0)
 			{
@@ -1370,11 +1381,23 @@ namespace AsynCLAudio.Core
 					return [];
 				}
 
-				long startFrame = posFrames - halfWindowFrames;
+				long startFrame = posFrames - (lookBackwards ? halfWindowFrames : 0);
 				long endFrameExclusive = startFrame + fullWindowFrames;
 
-				// Out-of-bounds vermeiden
-				if (startFrame < 0 || endFrameExclusive > data.LongLength)
+				// Out-of-bounds vermeiden, verschieben
+				while (endFrameExclusive > data.Length)
+				{
+					startFrame -= windowSize;
+					endFrameExclusive -= windowSize;
+				}
+
+				while (startFrame < 0)
+				{
+					startFrame += windowSize;
+					endFrameExclusive += windowSize;
+				}
+
+				if (endFrameExclusive > data.LongLength)
 				{
 					return [];
 				}
@@ -1388,11 +1411,25 @@ namespace AsynCLAudio.Core
 				// Interleaved Mehrkanal-Daten (Floats)
 				float[] data = this.Data;
 
-				long startFloatIndex = (posFrames - halfWindowFrames) * this.Channels;
+				long startFloatIndex = (posFrames - (lookBackwards ? halfWindowFrames : 0)) * this.Channels;
 				long endFloatIndexExclusive = startFloatIndex + ((long) fullWindowFrames * this.Channels);
 
-				if (startFloatIndex < 0 || endFloatIndexExclusive > data.LongLength)
+				while (endFloatIndexExclusive > data.Length)
 				{
+					startFloatIndex -= windowSize * this.Channels;
+					endFloatIndexExclusive -= windowSize * this.Channels;
+				}
+
+				while (startFloatIndex < 0)
+				{
+					startFloatIndex += windowSize * this.Channels;
+					endFloatIndexExclusive += windowSize * this.Channels;
+				}
+
+				if (endFloatIndexExclusive > data.LongLength || startFloatIndex < 0)
+				{
+					Debug.WriteLine("GetCurrentWindow: Out of bounds access prevented.");
+					// Out-of-bounds, verschieben
 					return [];
 				}
 

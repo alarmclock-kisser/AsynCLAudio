@@ -72,7 +72,7 @@ namespace AsynCLAudio.Forms
 			// End recording if running
 			if (AudioRecorder.IsRecording)
 			{
-				AudioRecorder.StopRecording();
+				AudioRecorder.StopRecording(false);
 			}
 
 			this.playbackTimer?.Dispose();
@@ -306,20 +306,58 @@ namespace AsynCLAudio.Forms
 		{
 			this.UpdateInfoView();
 			this.vScrollBar_trackVolume.Value = (100 - this.SelectedTrack?.Volume) ?? 100;
-			if (this.SelectedTrack != null && this.SelectedTrack.Playing)
+			if (this.SelectedTrack != null)
 			{
-				this.playbackTimer?.Dispose();
-				this.playbackTimer = new System.Threading.Timer(async _ =>
+				float scannedTiming = BeatScanner.GetLastTiming(this.SelectedTrack);
+				if (scannedTiming > 0.0f)
 				{
-					if (this.disposing || this.IsDisposed || !this.IsHandleCreated)
+					int divisor = (int) (1.0f / scannedTiming);
+					float time = scannedTiming * divisor;
+					while (divisor < 4)
 					{
-						return;
+						divisor *= 2;
+						time *= 2;
 					}
-					if (this.SelectedTrack?.Playing == true)
+
+					this.textBox_timing_scanned.Text = $"{time:F0} / {divisor} time";
+				}
+				else
+				{
+					this.textBox_timing_scanned.ResetText();
+				}
+
+				double scannedBpm = BeatScanner.GetLastBpm(this.SelectedTrack);
+				if (scannedBpm > 0.0f)
+				{
+					if (scannedTiming > 0)
 					{
-						await this.UpdateWaveform();
+						scannedBpm *= scannedTiming;
 					}
-				}, null, 0, 1000 / (int) this.numericUpDown_fps.Value);
+
+					this.textBox_bpm_scanned.Text += $"{scannedBpm:F3} BPM";
+				}
+				else
+				{
+					this.textBox_bpm_scanned.ResetText();
+				}
+
+				if (this.SelectedTrack.Playing)
+				{
+					this.playbackTimer?.Dispose();
+					this.playbackTimer = new System.Threading.Timer(async _ =>
+					{
+						if (this.disposing || this.IsDisposed || !this.IsHandleCreated)
+						{
+							return;
+						}
+						if (this.SelectedTrack?.Playing == true)
+						{
+							await this.UpdateWaveform();
+						}
+					}, null, 0, 1000 / (int) this.numericUpDown_fps.Value);
+				}
+
+				
 			}
 		}
 
@@ -646,6 +684,10 @@ namespace AsynCLAudio.Forms
 
 			ConcurrentBag<AudioObj> selectedTracks = [];
 
+			int chunkSize = (int) this.numericUpDown_chunkSize.Value;
+			float overlap = (float) this.numericUpDown_overlap.Value;
+			float targetBpm = (float) this.numericUpDown_targetBpm.Value;
+
 			foreach (var track in this.audioCollection.Tracks)
 			{
 				if (track.Bpm < 60)
@@ -675,9 +717,28 @@ namespace AsynCLAudio.Forms
 				this.FillTracksListBox();
 				this.UpdateInfoView();
 
+				float initialBpm = track.Bpm;
 				double factor = (double) (track.Bpm / (double) this.numericUpDown_targetBpm.Value);
-				int chunkSize = (int) this.numericUpDown_chunkSize.Value;
-				float overlap = (float) this.numericUpDown_overlap.Value;
+
+				// Try double / halve bpm
+				if (factor < 0.5f)
+				{
+					initialBpm = (float) (initialBpm * 2);
+
+					this.Log($"Stretch factor was {factor:F5}, doubling initial BPM to {initialBpm:F3} BPM", $"Stretch factor adjusted");
+
+					factor = (double) initialBpm / (double) targetBpm;
+				}
+				else if (factor > 2.0f)
+				{
+					initialBpm = (float) (initialBpm / 2);
+
+					this.Log($"Stretch factor was {factor:F5}, halving initial BPM to {initialBpm:F3} BPM", $"Stretch factor adjusted");
+
+					factor = (double) initialBpm / (double) targetBpm;
+				}
+
+				await track.UpdateBpm(initialBpm);
 
 				int max = (int) (track.Length / chunkSize) * 6;
 				this.progressBar_processing.Maximum = max;
@@ -962,15 +1023,38 @@ namespace AsynCLAudio.Forms
 				this.Log("Playback stopped ■", this.SelectedTrack.Name);
 			}
 
-			track.UpdateBpm((float) this.numericUpDown_initialBpm.Value);
+			await track.UpdateBpm((float) this.numericUpDown_initialBpm.Value);
 			track.IsProcessing = true;
 
 			this.FillTracksListBox();
 			this.UpdateInfoView();
 
-			double factor = (double) this.numericUpDown_stretchFactor.Value;
 			int chunkSize = (int) this.numericUpDown_chunkSize.Value;
 			float overlap = (float) this.numericUpDown_overlap.Value;
+			
+			double factor = (double) this.numericUpDown_stretchFactor.Value;
+			float initialBpm = (float) this.numericUpDown_initialBpm.Value;
+			float targetBpm = (float) this.numericUpDown_targetBpm.Value;
+
+			// Try double / halve bpm
+			if (factor < 0.5f)
+			{
+				initialBpm = (float)(initialBpm * 2);
+				
+				this.Log($"Stretch factor was {factor:F5}, doubling initial BPM to {initialBpm:F3} BPM", $"Stretch factor adjusted");
+
+				factor = (double) initialBpm / (double) targetBpm;
+			}
+			else if (factor > 2.0f)
+			{
+				initialBpm = (float)(initialBpm / 2);
+
+				this.Log($"Stretch factor was {factor:F5}, halving initial BPM to {initialBpm:F3} BPM", $"Stretch factor adjusted");
+
+				factor = (double) initialBpm / (double) targetBpm;
+			}
+
+			await track.UpdateBpm(initialBpm);
 
 			// Calculate max + progress handler
 			int max = (int) (track.Length / chunkSize) * 6; // FFT, stretch, IFFT
@@ -1200,7 +1284,7 @@ namespace AsynCLAudio.Forms
 				await Task.Run(() =>
 				{
 					// Stop recording
-					AudioRecorder.StopRecording();
+					AudioRecorder.StopRecording(true);
 				});
 
 				// this.comboBox_captureDevices.Enabled = true;
@@ -1591,7 +1675,7 @@ namespace AsynCLAudio.Forms
 
 		private async void button_scan_Click(object sender, EventArgs e)
 		{
-			bool inParallel = ModifierKeys.HasFlag(Keys.Control);
+			bool ctrlFlag = ModifierKeys.HasFlag(Keys.Control);
 
 			var track = this.SelectedTrack;
 			if (track == null)
@@ -1617,7 +1701,36 @@ namespace AsynCLAudio.Forms
 
 			try
 			{
-				scannedBpm = await BeatScanner.ScanBpmAsync(track, windowSize, lookingRange, minBpm, maxBpm);
+				float lastTiming = BeatScanner.GetLastTiming(track);
+				if (lastTiming <= 0 && ctrlFlag)
+				{
+					this.Log($"Started scanning timing with {track.GetTime(windowSize * lookingRange / 2):F3} sec. ...", track.Name);
+					lastTiming = await BeatScanner.ScanTimingAsync(track, windowSize, lookingRange);
+					if (lastTiming < 0.01f)
+					{
+						this.textBox_timing_scanned.ResetText();
+						this.Log("Scan timing result", "No valid timing found", true);
+					}
+					else
+					{
+						this.Log($"Scanned timing: {lastTiming:F3} beats.", track.Name);
+						int divisor = (int) (1.0f / lastTiming);
+						float time = lastTiming * divisor;
+						while (divisor < 4)
+						{
+							divisor *= 2;
+							time *= 2;
+						}
+
+						this.textBox_timing_scanned.Text = $"{time:F0} / {divisor} time";
+					}
+				}
+				else
+				{
+					lastTiming = 1.0f;
+				}
+
+				scannedBpm = await BeatScanner.ScanBpmAsync(track, windowSize, lookingRange, minBpm, maxBpm) * lastTiming;
 				this.Log($"Scanned BPM: {scannedBpm:F3}", track.Name);
 				if (scannedBpm < 10)
 				{
@@ -1626,7 +1739,7 @@ namespace AsynCLAudio.Forms
 				}
 				else
 				{
-					this.textBox_bpm_scanned.Text = scannedBpm.ToString("F3");
+					this.textBox_bpm_scanned.Text = scannedBpm.ToString("F3") + " BPM";
 					this.Log($"Scan result: {scannedBpm:F3}", "Valid BPM found");
 				}
 
@@ -1669,6 +1782,54 @@ namespace AsynCLAudio.Forms
 				{
 					this.Log("Set BPM error", "Invalid BPM value", true);
 				}
+			}
+		}
+
+		private async void button_scanTime_Click(object sender, EventArgs e)
+		{
+			var track = this.SelectedTrack;
+			if (track == null)
+			{
+				this.Log("Scan error", "Please select a track to scan", false);
+				return;
+			}
+
+			if (track.IsProcessing)
+			{
+				this.Log("Scan error", "Track is currently processing, please wait", false);
+				return;
+			}
+
+			int windowSize = (int) this.numericUpDown_bpmWindowSize.Value;
+			int lookingRange = (int) this.numericUpDown_bpmLookingRange.Value;
+
+			try
+			{
+				this.Log($"Started scanning timing with {track.GetTime(windowSize * lookingRange / 2):F3} sec. ...", track.Name);
+
+				float timing = await BeatScanner.ScanTimingAsync(track, windowSize, lookingRange);
+				if (timing < 0.01f)
+				{
+					this.textBox_timing_scanned.ResetText();
+					this.Log("Scan timing result", "No valid timing found", true);
+				}
+				else
+				{
+					this.Log($"Scanned timing: {timing:F3} beats.", track.Name);
+					int divisor = (int) (1.0f / timing);
+					float time = timing * divisor;
+					while (divisor < 4)
+					{
+						divisor *= 2;
+						time *= 2;
+					}
+
+					this.textBox_timing_scanned.Text = $"{time:F0} / {divisor} time";
+				}
+			}
+			catch (Exception ex)
+			{
+				this.Log("Scan timing error", ex.Message, true);
 			}
 		}
 	}

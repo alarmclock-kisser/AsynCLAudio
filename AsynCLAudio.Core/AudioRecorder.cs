@@ -1,4 +1,5 @@
-﻿using NAudio.CoreAudioApi;
+﻿using AsynCLAudio.Core;
+using NAudio.CoreAudioApi;
 using NAudio.Wave;
 using System;
 using System.IO;
@@ -150,7 +151,7 @@ public static class AudioRecorder
 		}
 	}
 
-	public static void StopRecording()
+	public static void StopRecording(bool normalizeOutput = false)
 	{
 		if (!IsRecording)
 		{
@@ -162,6 +163,16 @@ public static class AudioRecorder
 
 		Console.WriteLine("Aufnahme wird gestoppt...");
 		_capture?.StopRecording();
+
+		if (normalizeOutput && File.Exists(RecordedFile))
+		{
+			var obj = new AudioObj(RecordedFile, true);
+			if (obj.Data.LongLength > 0)
+			{
+				obj.Normalize().GetAwaiter().GetResult();
+				obj.Export("", RecordedFile).GetAwaiter().GetResult();
+			}
+		}
 	}
 
 	public static MMDevice? GetActivePlaybackDevice()

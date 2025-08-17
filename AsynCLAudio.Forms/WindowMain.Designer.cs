@@ -91,6 +91,8 @@ namespace AsynCLAudio.Forms
 			this.label_info_bpmMin = new Label();
 			this.label_info_bpmMax = new Label();
 			this.textBox_bpm_scanned = new TextBox();
+			this.textBox_timing_scanned = new TextBox();
+			this.button_scanTime = new Button();
 			((System.ComponentModel.ISupportInitialize) this.pictureBox_waveform).BeginInit();
 			((System.ComponentModel.ISupportInitialize) this.audioCollectionBindingSource).BeginInit();
 			((System.ComponentModel.ISupportInitialize) this.numericUpDown_chunkSize).BeginInit();
@@ -678,7 +680,7 @@ namespace AsynCLAudio.Forms
 			// checkBox_detect
 			// 
 			this.checkBox_detect.AutoSize = true;
-			this.checkBox_detect.Location = new Point(12, 102);
+			this.checkBox_detect.Location = new Point(147, 73);
 			this.checkBox_detect.Name = "checkBox_detect";
 			this.checkBox_detect.Size = new Size(83, 19);
 			this.checkBox_detect.TabIndex = 58;
@@ -781,12 +783,33 @@ namespace AsynCLAudio.Forms
 			this.textBox_bpm_scanned.Size = new Size(84, 23);
 			this.textBox_bpm_scanned.TabIndex = 69;
 			// 
+			// textBox_timing_scanned
+			// 
+			this.textBox_timing_scanned.Location = new Point(68, 109);
+			this.textBox_timing_scanned.Name = "textBox_timing_scanned";
+			this.textBox_timing_scanned.PlaceholderText = "4 / 4 time";
+			this.textBox_timing_scanned.ReadOnly = true;
+			this.textBox_timing_scanned.Size = new Size(84, 23);
+			this.textBox_timing_scanned.TabIndex = 70;
+			// 
+			// button_scanTime
+			// 
+			this.button_scanTime.Location = new Point(12, 109);
+			this.button_scanTime.Name = "button_scanTime";
+			this.button_scanTime.Size = new Size(50, 23);
+			this.button_scanTime.TabIndex = 71;
+			this.button_scanTime.Text = "Scan";
+			this.button_scanTime.UseVisualStyleBackColor = true;
+			this.button_scanTime.Click += this.button_scanTime_Click;
+			// 
 			// WindowMain
 			// 
 			this.AutoScaleDimensions = new SizeF(7F, 15F);
 			this.AutoScaleMode = AutoScaleMode.Font;
 			this.BackColor = SystemColors.ControlLight;
 			this.ClientSize = new Size(704, 801);
+			this.Controls.Add(this.button_scanTime);
+			this.Controls.Add(this.textBox_timing_scanned);
 			this.Controls.Add(this.textBox_bpm_scanned);
 			this.Controls.Add(this.label_info_bpmMax);
 			this.Controls.Add(this.label_info_bpmMin);
@@ -952,5 +975,7 @@ namespace AsynCLAudio.Forms
 		private Label label_info_bpmMin;
 		private Label label_info_bpmMax;
 		private TextBox textBox_bpm_scanned;
+		private TextBox textBox_timing_scanned;
+		private Button button_scanTime;
 	}
 }
