@@ -135,7 +135,7 @@ namespace AsynCLAudio.Core
 			this.ReadBpmTag();
 		}
 
-		public static async Task<AudioObj?> CreateAsync(string filePath, int refreshRateHz = 30, int maxWorkers = -2)
+		public static async Task<AudioObj?> CreateAsync(string filePath, int maxWorkers = -2)
 		{
 			// Check file
 			if (string.IsNullOrEmpty(filePath) || !File.Exists(filePath))
@@ -143,7 +143,7 @@ namespace AsynCLAudio.Core
 				return null;
 			}
 
-			var obj = new AudioObj(filePath, false, refreshRateHz);
+			var obj = new AudioObj(filePath, false);
 
 			Stopwatch sw = Stopwatch.StartNew();
 
